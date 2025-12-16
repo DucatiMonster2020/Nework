@@ -9,6 +9,13 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
+import com.bumptech.glide.Glide
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
@@ -16,20 +23,22 @@ import kotlinx.coroutines.launch
 import ru.netology.nework.R
 import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.databinding.FragmentEventDetailBinding
+import ru.netology.nework.util.AndroidUtils
+import ru.netology.nework.util.ValidationUtils
 import ru.netology.nework.viewmodel.EventViewModel
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class EventDetailFragment : Fragment() {
-
-    @Inject
-    lateinit var appAuth: AppAuth
+class EventDetailFragment : Fragment(), OnMapReadyCallback {
 
     private val viewModel: EventViewModel by viewModels()
+    private val args: EventDetailFragmentArgs by navArgs()
+
     private var _binding: FragmentEventDetailBinding? = null
     private val binding get() = _binding!!
 
-    private val args: EventDetailFragmentArgs by navArgs()
+    private lateinit var map: GoogleMap
+    private var mapInitialized = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -43,100 +52,187 @@ class EventDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        setupClickListeners()
+        setupToolbar()
+        setupMap()
         setupObservers()
-        loadEvent()
+        setupClickListeners()
+
+        viewModel.loadEvent(args.eventId)
     }
 
-    private fun setupClickListeners() {
-        binding.buttonLike.setOnClickListener {
-            viewModel.likeById(args.eventId)
-        }
-
-        binding.buttonParticipate.setOnClickListener {
-            if (binding.buttonParticipate.isChecked) {
-                viewModel.participateById(args.eventId)
-            } else {
-                viewModel.unparticipateById(args.eventId)
+    private fun setupToolbar() {
+        binding.toolbar.apply {
+            setNavigationOnClickListener {
+                findNavController().navigateUp()
+            }
+            setOnMenuItemClickListener { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.edit -> {
+                        // TODO: Реализовать редактирование
+                        true
+                    }
+                    R.id.delete -> {
+                        // TODO: Реализовать удаление
+                        true
+                    }
+                    R.id.participate -> {
+                        viewModel.currentEvent.value?.let { event ->
+                            viewModel.participate(event.id)
+                        }
+                        true
+                    }
+                    else -> false
+                }
             }
         }
+    }
 
-        binding.imageViewAvatar.setOnClickListener {
-            findNavController().navigate(
-                R.id.action_eventDetailFragment_to_userProfileFragment,
-                Bundle().apply {
-                    // Здесь нужно передать ID автора события
-                }
-            )
-        }
-
-        binding.imageButtonMenu.setOnClickListener {
-            // Показываем меню для владельца события
-        }
-
-        binding.textViewLink.setOnClickListener {
-            // Открываем ссылку в браузере
-        }
-
-        binding.imageViewAttachment.setOnClickListener {
-            // Открываем вложение
-        }
-
-        binding.buttonShowMap.setOnClickListener {
-            // Показываем карту с координатами
-        }
-
-        binding.buttonShowParticipants.setOnClickListener {
-            showParticipantsDialog()
-        }
-
-        binding.buttonShowSpeakers.setOnClickListener {
-            showSpeakersDialog()
-        }
-
-        binding.toolbar.setNavigationOnClickListener {
-            findNavController().popBackStack()
-        }
+    private fun setupMap() {
+        val mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
+        mapFragment.getMapAsync(this)
     }
 
     private fun setupObservers() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.eventState.collectLatest { state ->
-                // Обновляем UI на основе состояния
+        viewModel.currentEvent.observe(viewLifecycleOwner) { event ->
+            event?.let {
+                bindEvent(it)
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.errorState.collectLatest { error ->
-                showError(error.getUserMessage())
+        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
+            if (errorMessage.isNotBlank()) {
+                AndroidUtils.showToast(requireContext(), errorMessage)
             }
         }
     }
 
-    private fun loadEvent() {
-        viewModel.loadEventById(args.eventId)
+    private fun setupClickListeners() {
+        binding.likeButton.setOnClickListener {
+            viewModel.currentEvent.value?.let { event ->
+                viewModel.likeById(event.id)
+            }
+        }
+
+        binding.shareButton.setOnClickListener {
+            viewModel.currentEvent.value?.let { event ->
+                AndroidUtils.shareContent(
+                    requireContext(),
+                    "${event.content}\n\nСобытие в NeWork\nДата: ${ValidationUtils.formatDateTime(event.datetime)}",
+                    "Поделиться событием")
+            }
+        }
+
+        binding.linkTextView.setOnClickListener {
+            viewModel.currentEvent.value?.link?.let { url ->
+                AndroidUtils.openUrl(requireContext(), url)
+            }
+        }
     }
 
-    private fun showParticipantsDialog() {
-        // Показываем диалог со списком участников
-        android.app.AlertDialog.Builder(requireContext())
-            .setTitle("Участники события")
-            .setMessage("Список участников будет загружен")
-            .setPositiveButton("OK", null)
-            .show()
+    private fun bindEvent(event: ru.netology.nework.dto.Event) {
+        // Автор
+        binding.authorName.text = event.author
+        Glide.with(binding.authorAvatar)
+            .load(event.authorAvatar)
+            .circleCrop()
+            .placeholder(R.drawable.ic_avatar_placeholder)
+            .into(binding.authorAvatar)
+
+        // Даты
+        binding.published.text = ValidationUtils.formatDateTime(event.published)
+        binding.eventDateTime.text = ValidationUtils.formatDateTime(event.datetime)
+
+        // Тип события
+        binding.eventType.text = when (event.type) {
+            ru.netology.nework.dto.EventType.ONLINE -> getString(R.string.online)
+            ru.netology.nework.dto.EventType.OFFLINE -> getString(R.string.offline)
+        }
+
+        // Текст
+        binding.content.text = event.content
+
+        // Лайки
+        binding.likeButton.isChecked = event.likedByMe
+        binding.likeCount.text = AndroidUtils.formatCount(event.likes)
+
+        // Участие
+        binding.participantsCount.text = event.participantsIds.size.toString()
+        binding.toolbar.menu.findItem(R.id.participate).title =
+            if (event.participatedByMe) getString(R.string.leave) else getString(R.string.participate)
+
+        // Вложение
+        val attachment = event.attachment
+        binding.attachmentGroup.isVisible = attachment != null
+        if (attachment != null) {
+            when (attachment.type) {
+                ru.netology.nework.dto.Attachment.Type.IMAGE -> {
+                    binding.attachmentImageView.isVisible = true
+                    binding.audioView.isVisible = false
+                    binding.videoView.isVisible = false
+                    Glide.with(binding.attachmentImageView)
+                        .load(attachment.url)
+                        .into(binding.attachmentImageView)
+                }
+                ru.netology.nework.dto.Attachment.Type.AUDIO -> {
+                    binding.attachmentImageView.isVisible = false
+                    binding.audioView.isVisible = true
+                    binding.videoView.isVisible = false
+                }
+                ru.netology.nework.dto.Attachment.Type.VIDEO -> {
+                    binding.attachmentImageView.isVisible = true
+                    binding.audioView.isVisible = false
+                    binding.videoView.isVisible = true
+                    Glide.with(binding.attachmentImageView)
+                        .load(attachment.previewUrl)
+                        .into(binding.attachmentImageView)
+                }
+            }
+        }
+
+        // Ссылка
+        binding.linkGroup.isVisible = !event.link.isNullOrBlank()
+        event.link?.let { link ->
+            binding.linkTextView.text = AndroidUtils.extractDomain(link)
+        }
+
+        // Меню
+        binding.toolbar.menu.findItem(R.id.edit).isVisible = event.ownedByMe
+        binding.toolbar.menu.findItem(R.id.delete).isVisible = event.ownedByMe
+
+        // Координаты и карта
+        val hasCoordinates = event.coords != null
+        binding.mapGroup.isVisible = hasCoordinates
+
+        if (hasCoordinates && mapInitialized) {
+            event.coords?.let { coords ->
+                val location = LatLng(coords.lat, coords.long)
+                map.addMarker(
+                    MarkerOptions()
+                        .position(location)
+                        .title("Местоположение события")
+                )
+                map.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 15f))
+            }
+        }
     }
 
-    private fun showSpeakersDialog() {
-        // Показываем диалог со списком спикеров
-        android.app.AlertDialog.Builder(requireContext())
-            .setTitle("Спикеры события")
-            .setMessage("Список спикеров будет загружен")
-            .setPositiveButton("OK", null)
-            .show()
-    }
+    override fun onMapReady(googleMap: GoogleMap) {
+        map = googleMap
+        mapInitialized = true
 
-    private fun showError(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+        // Настройка карты
+        map.uiSettings.isZoomControlsEnabled = true
+
+        // Если событие уже загружено, отображаем координаты
+        viewModel.currentEvent.value?.coords?.let { coords ->
+            val location = LatLng(coords.lat, coords.long)
+            map.addMarker(
+                MarkerOptions()
+                    .position(location)
+                    .title("Местоположение события")
+            )
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 15f))
+        }
     }
 
     override fun onDestroyView() {

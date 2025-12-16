@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Для сохранения фото с камеры -->
+    <external-files-path
+        name="camera_photos"
+        path="Pictures/" />
+
+    <!-- Для временных файлов -->
+    <cache-path
+        name="camera_cache"
+        path="camera/" />
+
+    <!-- Для внешнего кэша -->
+    <external-cache-path
+        name="external_camera_cache"
+        path="camera/" />
+</paths>

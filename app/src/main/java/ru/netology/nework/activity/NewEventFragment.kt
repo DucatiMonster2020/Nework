@@ -1,7 +1,9 @@
 package ru.netology.nework.activity
 
-import android.Manifest.permission.CAMERA
+import android.Manifest
 import android.app.Activity
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,79 +12,74 @@ import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.bumptech.glide.Glide
-import com.google.android.material.datepicker.MaterialDatePicker
-import com.google.android.material.snackbar.Snackbar
-import com.google.android.material.timepicker.MaterialTimePicker
-import com.google.android.material.timepicker.TimeFormat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 import ru.netology.nework.R
-import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.databinding.FragmentNewEventBinding
-import ru.netology.nework.dto.Attachment
-import ru.netology.nework.dto.Coordinates
-import ru.netology.nework.dto.EventRequest
 import ru.netology.nework.dto.MediaUpload
 import ru.netology.nework.enumeration.EventType
+import ru.netology.nework.util.AndroidUtils
+import ru.netology.nework.util.ValidationUtils
 import ru.netology.nework.viewmodel.EventViewModel
 import java.io.File
-import java.text.SimpleDateFormat
-import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneId
-import java.util.Date
-import java.util.Locale
-import javax.inject.Inject
+import java.time.format.DateTimeFormatter
+import java.util.Calendar
 
 @AndroidEntryPoint
 class NewEventFragment : Fragment() {
 
-    @Inject
-    lateinit var appAuth: AppAuth
-
     private val viewModel: EventViewModel by viewModels()
     private var _binding: FragmentNewEventBinding? = null
     private val binding get() = _binding!!
-
-    private var selectedDateTime: Instant? = null
-    private var selectedCoordinates: Coordinates? = null
-    private var selectedAttachment: Attachment? = null
-    private var selectedSpeakerIds = emptyList<Long>()
-
-    private val cameraPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            openCamera()
+    private var mediaUri: Uri? = null
+    private var mediaType: String? = null
+    private var eventDateTime: LocalDateTime? = null
+    private val selectedSpeakerIds = mutableListOf<Long>()
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        if (permissions.all { it.value }) {
+            showAttachmentTypeDialog()
         } else {
-            showError("Для добавления фото нужен доступ к камере")
+            Toast.makeText(
+                requireContext(),
+                "Необходимы разрешения для доступа к файлам",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
-    private val galleryLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let { handleImageUri(it) }
-    }
-    private val cameraLauncher = registerForActivityResult(
+    private val pickMediaLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            cameraFile?.let { file ->
-                handleCameraImage(file)
+            result.data?.data?.let { uri ->
+                mediaUri = uri
+                mediaType = getMediaTypeFromUri(uri)
+                loadMediaPreview(uri)
             }
         }
     }
-
-    private var cameraFile: File? = null
-
+    private val pickLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getDoubleExtra("latitude", 0.0)?.let { lat ->
+                result.data?.getDoubleExtra("longitude", 0.0)?.let { lon ->
+                    viewModel.setCoordinates(lat, lon)
+                    binding.locationButton.text = getString(R.string.location_selected)
+                }
+            }
+        }
+    }
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -91,297 +88,261 @@ class NewEventFragment : Fragment() {
         _binding = FragmentNewEventBinding.inflate(inflater, container, false)
         return binding.root
     }
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        setupClickListeners()
-        setupObservers()
         setupToolbar()
-
-        val eventId = arguments?.getLong("eventId")
-        if (eventId != null && eventId != 0L) {
-            loadEvent(eventId)
-            binding.toolbar.title = "Редактировать событие"
-        }
+        setupObservers()
+        setupClickListeners()
+        setupDateTime()
     }
-
     private fun setupToolbar() {
-        binding.toolbar.setNavigationOnClickListener {
-            findNavController().popBackStack()
-        }
-
-        binding.toolbar.setOnMenuItemClickListener { menuItem ->
-            when (menuItem.itemId) {
-                R.id.save -> {
-                    saveEvent()
-                    true
+        binding.toolbar.apply {
+            setNavigationOnClickListener {
+                findNavController().navigateUp()
+            }
+            setOnMenuItemClickListener { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.save -> {
+                        saveEvent()
+                        true
+                    } else -> false
                 }
-                else -> false
             }
         }
     }
-
+    private fun setupObservers() {
+        viewModel.eventCreated.observe(viewLifecycleOwner) { success ->
+            if (success) {
+                findNavController().popBackStack()
+            }
+        }
+        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
+            if (errorMessage.isNotBlank()) {
+                Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     private fun setupClickListeners() {
-        binding.buttonSelectDateTime.setOnClickListener {
+        binding.attachmentButton.setOnClickListener {
+            checkPermissionsAndShowDialog()
+        }
+        binding.locationButton.setOnClickListener {
+            val action = NewEventFragmentDirections.actionNewEventFragmentToMapFragment()
+            pickLocationLauncher.launch(Intent(requireContext(), MapFragment::class.java).apply {
+                putExtras(action.arguments)
+            })
+        }
+        binding.speakersButton.setOnClickListener {
+            selectSpeakers()
+        }
+        binding.dateTimeButton.setOnClickListener {
             showDateTimePicker()
         }
-        binding.radioGroupType.setOnCheckedChangeListener { _, checkedId ->
-            when (checkedId) {
-                R.id.radioOnline -> viewModel.updateType(EventType.ONLINE)
-                R.id.radioOffline -> viewModel.updateType(EventType.OFFLINE)
-            }
-        }
-        binding.buttonSelectLocation.setOnClickListener {
-            findNavController().navigate(R.id.action_newEventFragment_to_mapFragment)
-        }
-        binding.buttonSelectSpeakers.setOnClickListener {
-            findNavController().navigate(R.id.action_newEventFragment_to_usersFragment)
-        }
-        binding.buttonTakePhoto.setOnClickListener {
-            checkCameraPermission()
-        }
-        binding.buttonSelectFromGallery.setOnClickListener {
-            galleryLauncher.launch("image/*")
-        }
-        binding.buttonSelectAudio.setOnClickListener {
-            selectAudioFile()
-        }
-        binding.buttonSelectVideo.setOnClickListener {
-            selectVideoFile()
-        }
-        binding.buttonRemoveAttachment.setOnClickListener {
-            selectedAttachment = null
-            updateAttachmentUI()
-        }
     }
-
-    private fun setupObservers() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.eventContentState.collectLatest { content ->
-                binding.editTextContent.setText(content)
-                selectedDateTime = content.datetime
-                selectedCoordinates = content.coordinates
-                selectedAttachment = content.attachment
-                selectedSpeakerIds = content.speakerIds
-
-                updateDateTimeUI()
-                updateLocationUI()
-                updateAttachmentUI()
-                updateSpeakersUI()
-                updateEventTypeUI(content.type)
-            }
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.errorState.collectLatest { error ->
-                showError(error.getUserMessage())
-            }
-        }
-    }
-
-    private fun loadEvent(eventId: Long) {
-        viewModel.loadEventById(eventId)
-    }
-
-    private fun saveEvent() {
-        val content = binding.editTextContent.text.toString().trim()
-
-        if (content.isBlank()) {
-            showError("Введите описание события")
-            return
-        }
-
-        if (selectedDateTime == null) {
-            showError("Выберите дату и время проведения")
-            return
-        }
-
-        val event = EventRequest(
-            id = arguments?.getLong("eventId") ?: 0L,
-            content = content,
-            datetime = selectedDateTime,
-            type = if (binding.radioOnline.isChecked) EventType.ONLINE else EventType.OFFLINE,
-            coords = selectedCoordinates,
-            attachment = selectedAttachment?.let {
-                MediaUpload(it.url)
-            },
-            link = null,
-            speakerIds = selectedSpeakerIds
+    private fun selectSpeakers() {
+        val action = NewEventFragmentDirections.actionNewEventFragmentToUsersFrament(
+            selectMode = true
         )
-
-        viewModel.save(event)
-        findNavController().popBackStack()
+        speakerSelectionLauncher.launch(action)
     }
-
-    private fun showDateTimePicker() {
-        val datePicker = MaterialDatePicker.Builder.datePicker()
-            .setTitleText("Выберите дату")
-            .setSelection(MaterialDatePicker.todayInUtcMilliseconds())
-            .build()
-
-        datePicker.addOnPositiveButtonClickListener { millis ->
-            val timePicker = MaterialTimePicker.Builder()
-                .setTimeFormat(TimeFormat.CLOCK_24H)
-                .setTitleText("Выберите время")
-                .setHour(12)
-                .setMinute(0)
-                .build()
-
-            timePicker.addOnPositiveButtonClickListener {
-                val date = Date(millis)
-                val localDateTime = LocalDateTime.ofInstant(
-                    date.toInstant(),
-                    ZoneId.systemDefault()
-                )
-                    .withHour(timePicker.hour)
-                    .withMinute(timePicker.minute)
-
-                selectedDateTime = localDateTime.atZone(ZoneId.systemDefault()).toInstant()
-                viewModel.updateDatetime(selectedDateTime)
-                updateDateTimeUI()
+    private val speakerSelectionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.getLongArrayExtra("selected_user_ids")?.let { ids ->
+                selectedSpeakerIds.clear()
+                selectedSpeakerIds.addAll(ids.toList())
+                updateSpeakersButton()
             }
-
-            timePicker.show(parentFragmentManager, "time_picker")
         }
-
-        datePicker.show(parentFragmentManager, "date_picker")
     }
-
-    private fun updateDateTimeUI() {
-        binding.textViewDateTime.text = selectedDateTime?.let {
-            val formatter = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
-            formatter.format(Date.from(it))
-        } ?: "Не выбрано"
+    private fun updateSpeakersButton() {
+        val count = selectedSpeakerIds.size
+        binding.speakersButton.text = if (count > 0) "Спикеры: $count"
+        else "Добавить спикеров"
     }
-
-    private fun updateLocationUI() {
-        binding.textViewLocation.text = selectedCoordinates?.let {
-            "Широта: ${it.lat}, Долгота: ${it.long}"
-        } ?: "Не выбрано"
+    private fun setupDateTime() {
+        eventDateTime = LocalDateTime.now().plusDays(1)
+        updateDateTimeButton()
     }
-
-    private fun updateAttachmentUI() {
-        binding.apply {
-            imageViewAttachmentPreview.isVisible = selectedAttachment != null
-            buttonRemoveAttachment.isVisible = selectedAttachment != null
-
-            selectedAttachment?.let { attachment ->
-                when (attachment.type) {
-                    ru.netology.nework.enumeration.AttachmentType.IMAGE -> {
-                        Glide
-                            .with(imageViewAttachmentPreview)
-                            .load(attachment.url)
-                            .into(imageViewAttachmentPreview)
-                    }
-                    ru.netology.nework.enumeration.AttachmentType.AUDIO -> {
-                        imageViewAttachmentPreview.setImageResource(R.drawable.ic_audio)
-                    }
-                    ru.netology.nework.enumeration.AttachmentType.VIDEO -> {
-                        imageViewAttachmentPreview.setImageResource(R.drawable.ic_video)
-                    }
+    private fun checkPermissionsAndShowDialog() {
+        val permissions = arrayOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.CAMERA
+        )
+        val allGranted = permissions.all { permission ->
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                permission
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted) {
+            showAttachmentTypeDialog()
+        } else {
+            requestPermissionLauncher.launch(permissions)
+        }
+    }
+    private fun showAttachmentTypeDialog() {
+        val items = arrayOf(
+            getString(R.string.attachment_photo),
+            getString(R.string.attachment_audio),
+            getString(R.string.attachment_video)
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.add_attachment)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> pickImage()
+                    1 -> pickAudio()
+                    2 -> pickVideo()
                 }
             }
-        }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
-
-    private fun updateSpeakersUI() {
-        binding.textViewSpeakers.text = if (selectedSpeakerIds.isNotEmpty()) {
-            "Выбрано: ${selectedSpeakerIds.size}"
-        } else {
-            "Не выбраны"
-        }
+    private fun pickImage() {
+        val intent =
+            Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+                type = "image/*"
+            }
+        pickMediaLauncher.launch(intent)
     }
-
-    private fun updateEventTypeUI(type: EventType) {
-        when (type) {
-            EventType.ONLINE -> binding.radioOnline.isChecked = true
-            EventType.OFFLINE -> binding.radioOffline.isChecked = true
-        }
-    }
-
-    private fun checkCameraPermission() {
-        val permission = CAMERA
-        val hasPermission = ContextCompat.checkSelfPermission(
-            requireContext(),
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (hasPermission) {
-            openCamera()
-        } else {
-            cameraPermissionLauncher.launch(permission)
-        }
-    }
-
-    private fun openCamera() {
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        cameraFile = File.createTempFile(
-            "event_photo_",
-            ".jpg",
-            requireContext().cacheDir
-        )
-
-        val uri = FileProvider.getUriForFile(
-            requireContext(),
-            "${requireContext().packageName}.fileprovider",
-            cameraFile!!
-        )
-
-        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
-        cameraLauncher.launch(intent)
-    }
-
-    private fun handleImageUri(uri: Uri) {
-        showError("Выбрано изображение из галереи")
-    }
-
-    private fun handleCameraImage(file: File) {
-        showError("Сделано фото")
-    }
-
-    private fun selectAudioFile() {
+    private fun pickAudio() {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             type = "audio/*"
             addCategory(Intent.CATEGORY_OPENABLE)
         }
-        startActivityForResult(intent, AUDIO_REQUEST_CODE)
+        pickMediaLauncher.launch(intent)
     }
-
-    private fun selectVideoFile() {
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+    private fun pickVideo() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).apply {
             type = "video/*"
-            addCategory(Intent.CATEGORY_OPENABLE)
         }
-        startActivityForResult(intent, VIDEO_REQUEST_CODE)
+        pickMediaLauncher.launch(intent)
     }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (resultCode == Activity.RESULT_OK) {
-            when (requestCode) {
-                AUDIO_REQUEST_CODE -> {
-                    showError("Выбран аудиофайл")
-                }
-                VIDEO_REQUEST_CODE -> {
-                    showError("Выбран видеофайл")
-                }
+    private fun getMediaTypeFromUri(uri: Uri): String? {
+        return context?.contentResolver?.getType(uri)
+    }
+    private fun loadMediaPreview(uri: Uri) {
+        when {
+            mediaType?.startsWith("image/") == true -> {
+                binding.mediaPreview.isVisible = true
+                binding.audioPreview.isVisible = false
+                binding.videoPreview.isVisible = false
+                Glide.with(binding.mediaPreview)
+                    .load(uri)
+                    .into(binding.mediaPreview)
+            }
+            mediaType?.startsWith("audio/") == true -> {
+                binding.mediaPreview.isVisible = false
+                binding.audioPreview.isVisible = true
+                binding.videoPreview.isVisible = false
+            }
+            mediaType?.startsWith("video/") == true -> {
+                binding.mediaPreview.isVisible = true
+                binding.audioPreview.isVisible = false
+                binding.videoPreview.isVisible = true
+                Glide.with(binding.mediaPreview)
+                    .load(uri)
+                    .into(binding.mediaPreview)
             }
         }
+        binding.removeAttachmentButton.isVisible = true
+        binding.removeAttachmentButton.setOnClickListener {
+            mediaUri = null
+            mediaType = null
+            binding.mediaPreview.isVisible = false
+            binding.audioPreview.isVisible = false
+            binding.videoPreview.isVisible = false
+            binding.removeAttachmentButton.isVisible = false
+        }
     }
+    private fun showDateTimePicker() {
+        val calendar = Calendar.getInstance()
+        val year = calendar.get(Calendar.YEAR)
+        val month = calendar.get(Calendar.MONTH)
+        val day = calendar.get(Calendar.DAY_OF_MONTH)
 
-    private fun showError(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+        DatePickerDialog(
+            requireContext(),
+            { _, selectedYear, selectedMonth, selectedDay ->
+                TimePickerDialog(
+                    requireContext(),
+                    { _, hourOfDay, minute ->
+                        eventDateTime = LocalDateTime.of(
+                            selectedYear,
+                            selectedMonth + 1,
+                            selectedDay,
+                            hourOfDay,
+                            minute
+                        )
+                        updateDateTimeButton()
+                    },
+                    calendar.get(Calendar.HOUR_OF_DAY),
+                    calendar.get(Calendar.MINUTE),
+                    true
+                ).show()
+            },
+            year,
+            month,
+            day
+        ).show()
     }
+    private fun updateDateTimeButton() {
+        eventDateTime?.let { dateTime ->
+            val formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+            binding.dateTimeButton.text = dateTime.format(formatter)
+        }
+    }
+    private fun saveEvent() {
+        val content = binding.contentEditText.text.toString()
 
+        if (content.isBlank()) {
+            Toast.makeText(
+                requireContext(),
+                "Содержание события не может быть пустым",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        if (eventDateTime == null) {
+            Toast.makeText(
+                requireContext(),
+                "Выберите дату и время проведения события",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val eventType = if (binding.onlineRadioButton.isChecked) {
+            EventType.ONLINE
+        } else {
+            EventType.OFFLINE
+        }
+        val mediaUpload = mediaUri?.let { uri ->
+            val filePath = AndroidUtils.getFilePathFromUri(uri)
+
+            val validation = ValidationUtils.validateMediaFile(filePath)
+            if (validation is ValidationUtils.ValidationResult.Error) {
+                Toast.makeText(requireContext(), getString(validation.messageResId), Toast.LENGTH_LONG).show()
+                return
+            }
+
+            File(filePath).let { file ->
+                MediaUpload(file)
+            }
+        }
+        viewModel.createEvent(
+            content = content,
+            datetime = eventDateTime!!.toString(),
+            type = eventType,
+            mediaUpload = mediaUpload,
+            link = null,
+            speakerIds = selectedSpeakerIds
+        )
+    }
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
-    }
-
-    companion object {
-        private const val AUDIO_REQUEST_CODE = 1001
-        private const val VIDEO_REQUEST_CODE = 1002
     }
 }

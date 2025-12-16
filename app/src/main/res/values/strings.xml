@@ -131,4 +131,109 @@
     <string name="no_mentioned_users">Нет упомянутых пользователей</string>
     <string name="location">Местоположение</string>
     <string name="no_location">Местоположение не указано</string>
+
+    <!-- Validation errors -->
+    <string name="error_login_empty">Логин не может быть пустым</string>
+    <string name="error_login_too_short">Логин должен содержать минимум 3 символа</string>
+    <string name="error_login_too_long">Логин не должен превышать 50 символов</string>
+    <string name="error_login_invalid_chars">Логин может содержать только буквы, цифры, точку, дефис и подчеркивание</string>
+    <string name="error_name_empty">Имя не может быть пустым</string>
+    <string name="error_name_too_short">Имя должно содержать минимум 2 символа</string>
+    <string name="error_name_too_long">Имя не должно превышать 100 символов</string>
+    <string name="error_password_empty">Пароль не может быть пустым</string>
+    <string name="error_password_too_short">Пароль должен содержать минимум 6 символов</string>
+    <string name="error_password_too_long">Пароль не должен превышать 50 символов</string>
+    <string name="error_password_no_digit">Пароль должен содержать хотя бы одну цифру</string>
+    <string name="error_password_no_letter">Пароль должен содержать хотя бы одну букву</string>
+    <string name="error_password_mismatch">Пароли не совпадают</string>
+    <string name="error_file_not_found">Файл не найден</string>
+    <string name="error_file_too_large">Файл слишком большой (максимум 5 МБ)</string>
+    <string name="error_media_file_too_large">Файл слишком большой (максимум 15 МБ)</string>
+    <string name="error_invalid_image_format">Поддерживаются только JPEG и PNG форматы</string>
+    <string name="error_image_dimensions_too_large">Размер изображения не должен превышать 2048x2048 пикселей</string>
+    <string name="error_date_in_past">Дата не может быть в прошлом</string>
+    <string name="error_invalid_date_format">Неверный формат даты. Используйте ДД.ММ.ГГГГ ЧЧ:ММ</string>
+    <string name="error_wrong_login_or_password">Неправильный логин или пароль</string>
+    <string name="error_user_already_exists">Пользователь с таким логином уже зарегистрирован</string>
+
+    <!-- Common -->
+    <string name="error_occurred">Произошла ошибка</string>
+    <string name="no_internet">Нет подключения к интернету</string>
+    <string name="try_again">Попробовать снова</string>
+
+    <!-- Posts -->
+    <string name="edit_post">Редактировать пост</string>
+    <string name="post_content">Содержание поста</string>
+    <string name="choose_photo">Выбрать фото</string>
+    <string name="choose_audio">Выбрать аудио</string>
+    <string name="choose_video">Выбрать видео</string>
+    <string name="choose_location">Выбрать местоположение</string>
+    <string name="attachment_photo">Фото</string>
+    <string name="attachment_audio">Аудио</string>
+    <string name="attachment_video">Видео</string>
+    <string name="attachment_link">Ссылка</string>
+
+    <!-- Events -->
+    <string name="edit_event">Редактировать событие</string>
+    <string name="event_title">Название события</string>
+    <string name="event_datetime">Дата и время проведения</string>
+    <string name="add_speakers">Добавить спикеров</string>
+
+    <!-- Profile -->
+    <string name="my_profile">Мой профиль</string>
+    <string name="wall">Стена</string>
+    <string name="jobs">Работы</string>
+
+    <string name="edit_job">Редактировать работу</string>
+    <string name="currently_working">Работаю по настоящее время</string>
+    <string name="looking_for_job">В поиске работы</string>
+
+    <!-- Map -->
+    <string name="choose_location_on_map">Выберите местоположение на карте</string>
+    <string name="confirm_location">Подтвердить местоположение</string>
+    <string name="location_selected">Местоположение выбрано</string>
+    <string name="map_placeholder">Карта (требуется API ключ для полноценной работы)</string>
+    <string name="coordinates_format">Координаты: %1$.6f, %2$.6f</string>
+    <string name="coordinates">Координаты</string>
+    <string name="latitude">Широта</string>
+    <string name="longitude">Долгота</string>
+    <string name="open_in_maps">Открыть в картах</string>
+    <string name="copy_coordinates">Копировать координаты</string>
+    <string name="coordinates_copied">Координаты скопированы</string>
+
+    <!-- Date formats -->
+    <string name="date_format_dd_mm_yyyy_hh_mm">dd.MM.yyyy HH:mm</string>
+    <string name="date_format_dd_mmm_yyyy">dd MMM yyyy</string>
+
+    <string name="choose_from_gallery">Выбрать из галереи</string>
+    <string name="camera_not_available">Камера не доступна</string>
+    <string name="camera_permission_required">Для использования камеры необходимо разрешение</string>
+
+    <!-- Профиль -->
+    <string name="user_profile">Профиль пользователя</string>
+    <string name="follow">Подписаться</string>
+    <string name="unfollow">Отписаться</string>
+    <string name="last_job">Последнее место работы</string>
+    <string name="no_posts">Нет постов</string>
+    <string name="no_jobs">Нет информации о работе</string>
+    <string name="select_users">Выбрать пользователей</string>
+    <string name="select_date">Выбрать дату</string>
+    <string name="error_loading_posts">Ошибка загрузки постов</string>
+    <string name="error_loading_jobs">Ошибка загрузки работ</string>
+
+    <string name="file_too_large">Файл слишком большой (максимум 15 МБ)</string>
+
+    <!-- Меню -->
+    <string name="edit_profile">Редактировать профиль</string>
+    <string name="done">Готово</string>
+
+    <string name="leave">Покинуть</string>
+
+    <string name="user_avatar">Аватар пользователя</string>
+    <string name="profile_avatar">Аватар профиля</string>
+
+    <!-- Валидация -->
+    <string name="file_too_large_15mb">Размер файла не должен превышать 15 МБ</string>
+
+    <string name="and_more">и еще %d</string>
 </resources>

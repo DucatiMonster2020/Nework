@@ -1,6 +1,6 @@
 package ru.netology.nework.glide
 
-/*import android.content.Context
+import android.content.Context
 import com.bumptech.glide.Glide
 import com.bumptech.glide.GlideBuilder
 import com.bumptech.glide.Registry
@@ -29,5 +29,3 @@ class NeworkAppGlideModule : AppGlideModule() {
         )
     }
 }
-
- */

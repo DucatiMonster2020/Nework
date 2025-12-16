@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
 import ru.netology.nework.db.Converters
 import ru.netology.nework.dto.Attachment
-import ru.netology.nework.dto.Coordinates
+import ru.netology.nework.dto.Coords
 import ru.netology.nework.dto.Event
 import ru.netology.nework.dto.UserPreview
 import ru.netology.nework.enumeration.EventType
@@ -23,7 +23,7 @@ data class EventEntity(
     val content: String,
     val datetime: Instant,
     val published: Instant,
-    val coords: Coordinates? = null,
+    val coords: Coords? = null,
     val type: EventType = EventType.ONLINE,
     val likeOwnerIds: List<Long> = emptyList(),
     val likedByMe: Boolean = false,

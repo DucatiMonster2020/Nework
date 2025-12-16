@@ -6,22 +6,22 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 data class Post(
-    val id: Long,
-    val authorId: Long,
-    val author: String,
+    val id: Long = 0,
+    val authorId: Long = 0,
+    val author: String = "",
     val authorAvatar: String? = null,
     val authorJob: String? = null,
-    val content: String,
+    val content: String = "",
     val published: Instant,
-    val coords: Coordinates? = null,
+    val coords: Coords? = null,
     val link: String? = null,
     val mentionIds: List<Long> = emptyList(),
     val mentionedMe: Boolean = false,
     val likeOwnerIds: List<Long> = emptyList(),
     val likedByMe: Boolean = false,
     val attachment: Attachment? = null,
+    val ownedByMe: Boolean = false,
     val users: Map<Long, UserPreview> = emptyMap(),
-    val ownedByMe: Boolean = false
 ) {
     val formattedPublished: String
         get() {
@@ -32,11 +32,12 @@ data class Post(
         }
     fun getLikesCount(): Int = likeOwnerIds.size
 }
-data class Coordinates(
+data class Coords(
     val lat: Double,
     val long: Double
 )
 data class Attachment(
     val url: String,
-    val type: AttachmentType
+    val type: AttachmentType,
+    val previewUrl: String? = null
 )

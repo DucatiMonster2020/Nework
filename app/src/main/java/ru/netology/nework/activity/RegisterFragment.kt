@@ -1,73 +1,59 @@
 package ru.netology.nework.activity
 
-import android.Manifest.permission.CAMERA
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
 import com.bumptech.glide.Glide
-import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 import ru.netology.nework.R
-import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.databinding.FragmentRegisterBinding
 import ru.netology.nework.viewmodel.AuthViewModel
-import java.io.File
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class RegisterFragment : Fragment() {
 
-    @Inject
-    lateinit var appAuth: AppAuth
-    private val viewModel: AuthViewModel by ViewModels()
+    private val viewModel: AuthViewModel by viewModels()
+
     private var _binding: FragmentRegisterBinding? = null
     private val binding get() = _binding!!
 
     private var avatarUri: Uri? = null
-    private var avatarFile: File? = null
 
-    private val cameraPermissionLauncher = registerForActivityResult(
+    private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
+    ) { isGranted: Boolean ->
         if (isGranted) {
-            openCamera()
+            pickImage()
         } else {
-            showError("Для добавления фото нужен доступ к камере")
+            Toast.makeText(
+                requireContext(),
+                "Для выбора фото необходимо разрешение",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
-    private val galleryLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            avatarUri = it
-            loadAvatar(it)
-        }
-    }
-
-    private val cameraLauncher = registerForActivityResult(
+    private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            avatarFile?.let { file ->
-                val uri = FileProvider.getUriForFile(
-                    requireContext(),
-                    "${requireContext().packageName}.fileprovider",
-                    file
-                )
+            result.data?.data?.let { uri ->
                 avatarUri = uri
                 loadAvatar(uri)
             }
@@ -86,215 +72,130 @@ class RegisterFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        setupClickListeners()
+        setupTextWatchers()
         setupObservers()
-        setupInputListeners()
+        setupClickListeners()
     }
 
-    private fun setupClickListeners() {
-        binding.buttonRegister.setOnClickListener {
-            register()
+    private fun setupTextWatchers() {
+        val textWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                clearFieldErrors()
+            }
+            override fun afterTextChanged(s: Editable?) {}
         }
 
-        binding.buttonSelectAvatar.setOnClickListener {
-            showAvatarSelectionDialog()
-        }
+        binding.loginEditText.addTextChangedListener(textWatcher)
+        binding.nameEditText.addTextChangedListener(textWatcher)
+        binding.passwordEditText.addTextChangedListener(textWatcher)
+        binding.passwordConfirmEditText.addTextChangedListener(textWatcher)
+    }
 
-        binding.buttonRemoveAvatar.setOnClickListener {
-            removeAvatar()
-        }
-
-        binding.toolbar.setNavigationOnClickListener {
-            findNavController().popBackStack()
-        }
+    private fun clearFieldErrors() {
+        binding.loginTextInputLayout.error = null
+        binding.nameTextInputLayout.error = null
+        binding.passwordTextInputLayout.error = null
+        binding.passwordConfirmTextInputLayout.error = null
     }
 
     private fun setupObservers() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.authState.collectLatest { isAuthenticated ->
-                if (isAuthenticated) {
-                    findNavController().popBackStack(R.id.postsFragment, false)
+        viewModel.data.observe(viewLifecycleOwner) { authState ->
+            if (authState.isAuthorized) {
+                findNavController().popBackStack(R.id.postsFragment, false)
+            }
+        }
+
+        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
+            if (errorMessage.isNotBlank()) {
+                Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
+                viewModel.clearError()
+            }
+        }
+
+        viewModel.validationError.observe(viewLifecycleOwner) { error ->
+            error?.let { (field, messageResId) ->
+                when (field) {
+                    "login" -> binding.loginTextInputLayout.error = getString(messageResId)
+                    "name" -> binding.nameTextInputLayout.error = getString(messageResId)
+                    "password" -> binding.passwordTextInputLayout.error = getString(messageResId)
+                    "passwordConfirm" -> binding.passwordConfirmTextInputLayout.error = getString(messageResId)
+                    "avatar" -> Toast.makeText(requireContext(), getString(messageResId), Toast.LENGTH_LONG).show()
                 }
+                viewModel.clearValidationError()
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.errorState.collectLatest { error ->
-                showError(error)
-            }
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.loadingState.collectLatest { isLoading ->
-                binding.progressBar.isVisible = isLoading
-                binding.buttonRegister.isEnabled = !isLoading
-            }
-        }
-    }
-    private fun setupInputListeners() {
-        binding.textInputLogin.editText?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                validateLogin()
-            }
-        }
-
-        binding.textInputName.editText?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                validateName()
-            }
-        }
-
-        binding.textInputPassword.editText?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                validatePassword()
-            }
-        }
-
-        binding.textInputPasswordConfirm.editText?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) {
-                validatePasswordConfirm()
-            }
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.progressBar.isVisible = isLoading
+            binding.registerButton.isEnabled = !isLoading
+            binding.avatarButton.isEnabled = !isLoading
+            binding.loginEditText.isEnabled = !isLoading
+            binding.nameEditText.isEnabled = !isLoading
+            binding.passwordEditText.isEnabled = !isLoading
+            binding.passwordConfirmEditText.isEnabled = !isLoading
         }
     }
 
-    private fun showAvatarSelectionDialog() {
-        val options = arrayOf("Сделать фото", "Выбрать из галереи", "Отмена")
+    private fun setupClickListeners() {
+        binding.registerButton.setOnClickListener {
+            val login = binding.loginEditText.text.toString()
+            val name = binding.nameEditText.text.toString()
+            val password = binding.passwordEditText.text.toString()
+            val passwordConfirm = binding.passwordConfirmEditText.text.toString()
 
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("Выберите аватар")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> checkCameraPermission()
-                    1 -> openGallery()
-                    2 -> {}
-                }
+            if (password != passwordConfirm) {
+                binding.passwordConfirmTextInputLayout.error = "Пароли не совпадают"
+                return@setOnClickListener
             }
-            .show()
-    }
 
-    private fun checkCameraPermission() {
-        val permission = CAMERA
-        val hasPermission = ContextCompat.checkSelfPermission(
-            requireContext(),
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
+            viewModel.register(login, password, name, avatarUri)
+        }
 
-        if (hasPermission) {
-            openCamera()
-        } else {
-            cameraPermissionLauncher.launch(permission)
+        binding.avatarButton.setOnClickListener {
+            checkPermissionAndPickImage()
+        }
+
+        binding.loginButton.setOnClickListener {
+            findNavController().navigateUp()
         }
     }
 
-    private fun openCamera() {
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        avatarFile = File.createTempFile(
-            "avatar_",
-            ".jpg",
-            requireContext().cacheDir
-        )
-
-        val uri = FileProvider.getUriForFile(
-            requireContext(),
-            "${requireContext().packageName}.fileprovider",
-            avatarFile!!
-        )
-
-        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
-        cameraLauncher.launch(intent)
+    private fun checkPermissionAndPickImage() {
+        when {
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                pickImage()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE) -> {
+                Toast.makeText(
+                    requireContext(),
+                    "Для выбора фото необходимо разрешение на доступ к хранилищу",
+                    Toast.LENGTH_LONG
+                ).show()
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            else -> {
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
     }
 
-    private fun openGallery() {
-        galleryLauncher.launch("image/*")
+    private fun pickImage() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+            type = "image/*"
+        }
+        pickImageLauncher.launch(intent)
     }
 
     private fun loadAvatar(uri: Uri) {
-        Glide.with(binding.imageViewAvatar)
+        Glide.with(binding.avatarImageView)
             .load(uri)
             .circleCrop()
-            .into(binding.imageViewAvatar)
-
-        binding.buttonRemoveAvatar.visibility = View.VISIBLE
-    }
-
-    private fun removeAvatar() {
-        avatarUri = null
-        avatarFile = null
-        binding.imageViewAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
-        binding.buttonRemoveAvatar.visibility = View.GONE
-    }
-
-    private fun register() {
-        val login = binding.textInputLogin.editText?.text?.toString()?.trim() ?: ""
-        val name = binding.textInputName.editText?.text?.toString()?.trim() ?: ""
-        val password = binding.textInputPassword.editText?.text?.toString()?.trim() ?: ""
-        val passwordConfirm = binding.textInputPasswordConfirm.editText?.text?.toString()?.trim() ?: ""
-
-        if (!validateLogin() || !validateName() || !validatePassword() || !validatePasswordConfirm()) {
-            return
-        }
-
-        if (password != passwordConfirm) {
-            binding.textInputPasswordConfirm.error = "Пароли не совпадают"
-            return
-        }
-
-        viewModel.register(login, password, name, avatarFile)
-    }
-
-    private fun validateLogin(): Boolean {
-        val login = binding.textInputLogin.editText?.text?.toString()?.trim() ?: ""
-        return if (login.isBlank()) {
-            binding.textInputLogin.error = "Введите логин"
-            false
-        } else if (login.length < 3) {
-            binding.textInputLogin.error = "Логин должен быть не менее 3 символов"
-            false
-        } else {
-            binding.textInputLogin.error = null
-            true
-        }
-    }
-    private fun validateName(): Boolean {
-        val name = binding.textInputName.editText?.text?.toString()?.trim() ?: ""
-        return if (name.isBlank()) {
-            binding.textInputName.error = "Введите имя"
-            false
-        } else {
-            binding.textInputName.error = null
-            true
-        }
-    }
-    private fun validatePassword(): Boolean {
-        val password = binding.textInputPassword.editText?.text?.toString()?.trim() ?: ""
-        return if (password.isBlank()) {
-            binding.textInputPassword.error = "Введите пароль"
-            false
-        } else if (password.length < 6) {
-            binding.textInputPassword.error = "Пароль должен быть не менее 6 символов"
-            false
-        } else {
-            binding.textInputPassword.error = null
-            true
-        }
-    }
-    private fun validatePasswordConfirm(): Boolean {
-        val passwordConfirm = binding.textInputPasswordConfirm.editText?.text?.toString()?.trim() ?: ""
-        val password = binding.textInputPassword.editText?.text?.toString()?.trim() ?: ""
-
-        return if (passwordConfirm.isBlank()) {
-            binding.textInputPasswordConfirm.error = "Подтвердите пароль"
-            false
-        } else if (passwordConfirm != password) {
-            binding.textInputPasswordConfirm.error = "Пароли не совпадают"
-            false
-        } else {
-            binding.textInputPasswordConfirm.error = null
-            true
-        }
-    }
-    private fun showError(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+            .into(binding.avatarImageView)
+        binding.avatarImageView.isVisible = true
     }
 
     override fun onDestroyView() {

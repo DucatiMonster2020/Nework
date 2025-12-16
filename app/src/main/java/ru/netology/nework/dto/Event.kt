@@ -14,18 +14,18 @@ data class Event(
     val content: String,
     val datetime: Instant,
     val published: Instant,
-    val coords: Coordinates? = null,
-    val type: EventType = EventType.ONLINE,
+    val coords: Coords? = null,
+    val type: EventType,
     val likeOwnerIds: List<Long> = emptyList(),
     val likedByMe: Boolean = false,
     val speakerIds: List<Long> = emptyList(),
     val participantsIds: List<Long> = emptyList(),
-    val participants: Map<Long, UserPreview> = emptyMap(),
-    val speakers: Map<Long, UserPreview> = emptyMap(),
     val participatedByMe: Boolean = false,
     val attachment: Attachment? = null,
     val link: String? = null,
-    val ownedByMe: Boolean = false
+    val ownedByMe: Boolean = false,
+    val users: Map<Long, UserPreview> = emptyMap(),
+    val speakers: List<Speaker> = emptyList()
 ) {
     val formattedPublished: String
         get() {
@@ -45,3 +45,8 @@ data class Event(
     fun getParticipantsCount(): Int = participantsIds.size
     fun getSpeakersCount(): Int = speakerIds.size
 }
+data class Speaker(
+    val id: Long,
+    val name: String,
+    val avatar: String? = null
+)

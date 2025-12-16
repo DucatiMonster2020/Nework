@@ -1,10 +1,17 @@
 package ru.netology.nework.repository
 
+import android.net.Uri
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import okhttp3.MultipartBody
 import ru.netology.nework.api.ApiService
 import ru.netology.nework.dao.JobDao
 import ru.netology.nework.dao.UserDao
+import ru.netology.nework.db.AppDb
 import ru.netology.nework.dto.Job
 import ru.netology.nework.dto.MediaResponse
 import ru.netology.nework.dto.MediaUpload
@@ -14,104 +21,244 @@ import ru.netology.nework.dto.UserResponse
 import ru.netology.nework.entity.JobEntity
 import ru.netology.nework.entity.UserEntity
 import ru.netology.nework.error.asAppError
+import ru.netology.nework.util.AndroidUtils
+import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class UserRepositoryImpl @Inject constructor(
     private val apiService: ApiService,
-    private val userDao: UserDao,
-    private val jobDao: JobDao
+    private val dao: UserDao,
+    appDb: AppDb,
 ) : UserRepository {
-    override suspend fun getAll(): List<User> {
+
+    @OptIn(ExperimentalPagingApi::class)
+    override val data: Flow<PagingData<User>> = Pager(
+        config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+        pagingSourceFactory = dao::pagingSource
+    ).flow
+        .map { pagingData ->
+            pagingData.map { it.toDto() }
+        }
+        .flowOn(Dispatchers.Default)
+
+    override suspend fun getAll() {
         try {
-            val users = apiService.getUsers()
-            userDao.insert(users.map(UserEntity::fromDto))
-            return users
+            val response = apiService.getAllUsers()
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            val body = response.body() ?: throw ApiError(response.code(), response.message())
+            dao.insert(body.toEntity())
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            val localUsers = userDao.getAll()
-            return emptyList()
+            throw UnknownError
         }
     }
 
-    override suspend fun getUserById(id: Long): UserResponse {
+    override suspend fun getById(id: Long): User {
         try {
-            return apiService.getUserById(id)
+            // Сначала проверяем кэш
+            val cachedUser = dao.getById(id)?.toDto()
+            if (cachedUser != null) {
+                return cachedUser
+            }
+
+            val response = apiService.getUserById(id)
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            val body = response.body() ?: throw ApiError(response.code(), response.message())
+            dao.insert(UserEntity.fromDto(body))
+            return body
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun getUserWall(userId: Long, offset: Int, count: Int): List<Post> {
+    override suspend fun getMyProfile(): User {
         try {
-            return apiService.getUserWall(userId,offset, count)
+            val response = apiService.getMyProfile()
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            val body = response.body() ?: throw ApiError(response.code(), response.message())
+            dao.insert(UserEntity.fromDto(body))
+            return body
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun getUserJobs(userId: Long): List<Job> {
+    override suspend fun getJobs(userId: Long): List<Job> {
         try {
-            val jobs = apiService.getUserJobs(userId)
-            jobDao.insert(jobs.map { JobEntity.fromDto(it, userId) })
-            return jobs
+            val response = apiService.getJobs(userId)
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            return response.body() ?: emptyList()
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            val localJobs = jobDao.getJobsByUserIdSync(userId)
-            return localJobs.map { it.toDto() }
+            throw UnknownError
         }
     }
 
     override suspend fun getMyJobs(): List<Job> {
         try {
-            return apiService.getMyJobs()
+            val response = apiService.getMyJobs()
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            return response.body() ?: emptyList()
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun saveJOb(job: Job): Job {
+    override suspend fun saveJob(
+        company: String,
+        position: String,
+        startDate: String,
+        endDate: String?
+    ) {
         try {
-            val saved = apiService.saveJob(job)
-            jobDao.insert(JobEntity.fromDto(saved, saved.id))
-            return saved
+            val response = apiService.saveJob(
+                CreateJobRequest(
+                    name = company,
+                    position = position,
+                    start = startDate,
+                    finish = endDate
+                )
+            )
+
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun deleteJob(id: Long) {
+    override suspend fun updateJob(
+        id: Long,
+        company: String,
+        position: String,
+        startDate: String,
+        endDate: String?
+    ) {
         try {
-            apiService.deleteJob(id)
-            jobDao.removeById(id)
+            val response = apiService.updateJob(
+                id,
+                CreateJobRequest(
+                    name = company,
+                    position = position,
+                    start = startDate,
+                    finish = endDate
+                )
+            )
+
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun updateAvatar(mediaUpload: MediaUpload): UserResponse {
+    override suspend fun removeJob(id: Long) {
         try {
-            val mediaResponse = MediaResponse(mediaUpload.id, "")
-            return apiService.updateAvatar(mediaResponse)
+            val response = apiService.removeJob(id)
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun getMyWall(offset: Int, count: Int): List<Post> {
+    override suspend fun updateAvatar(uri: Uri) {
         try {
-            return apiService.getMyWall(offset, count)
+            val file = File(AndroidUtils.getFilePathFromUri(uri) ?: return)
+            val part = MultipartBody.Part.createFormData(
+                "file",
+                file.name,
+                file.asRequestBody()
+            )
+
+            val response = apiService.updateAvatar(part)
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            val body = response.body() ?: throw ApiError(response.code(), response.message())
+            dao.insert(UserEntity.fromDto(body))
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
-    fun getUsersFlow(): Flow<List<User>> {
-        return userDao.getAll().map { users ->
-            users.map { it.toDto() }
+
+    override suspend fun follow(id: Long) {
+        try {
+            val response = apiService.followUser(id)
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+        } catch (e: IOException) {
+            throw NetworkError
+        } catch (e: Exception) {
+            throw UnknownError
         }
     }
-    fun getUserJobsFlow(userId: Long): Flow<List<Job>> {
-        return jobDao.getJobsByUserId(userId).map { jobs ->
-            jobs.map { it.toDto() }
+
+    override suspend fun unfollow(id: Long) {
+        try {
+            val response = apiService.unfollowUser(id)
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+        } catch (e: IOException) {
+            throw NetworkError
+        } catch (e: Exception) {
+            throw UnknownError
+        }
+    }
+
+    override suspend fun refresh() {
+        try {
+            val response = apiService.getAllUsers()
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+
+            val body = response.body() ?: throw ApiError(response.code(), response.message())
+            dao.insert(body.toEntity())
+        } catch (e: IOException) {
+            throw NetworkError
+        } catch (e: Exception) {
+            throw UnknownError
         }
     }
 }

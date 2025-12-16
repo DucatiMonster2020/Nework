@@ -1,6 +1,6 @@
 package ru.netology.nework.api
 
-import com.google.gson.FieldNamingPolicy
+import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
 import dagger.Provides
@@ -10,45 +10,61 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import ru.netology.nework.BuildConfig
-import ru.netology.nework.auth.AppAuth
-import ru.netology.nework.auth.provideAuthInterceptor
+import ru.netology.nework.auth.AuthInterceptor
+import ru.netology.nework.util.ConfigUtils
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
-@InstallIn(SingletonComponent::class)
 @Module
-object ApiServiceModule {
-    @Singleton
+@InstallIn(SingletonComponent::class)
+class ApiServiceModule {
+
     @Provides
-    fun provideRetrofit(auth: AppAuth): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl("${BuildConfig.BASE_URL}api/")
-            .client(provideOkHttpClient(auth))
-            .addConverterFactory(GsonConverterFactory.create(provideGson()))
-            .build()
-    }
     @Singleton
+    fun provideGson(): Gson = GsonBuilder()
+        .setLenient()
+        .create()
+
     @Provides
-    fun provideApiService(retrofit: Retrofit): ApiService {
-        return retrofit.create(ApiService::class.java)
-    }
-    private fun provideOkHttpClient(auth: AppAuth): OkHttpClient {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = if (BuildConfig.DEBUG) {
-                HttpLoggingInterceptor.Level.BODY
-            } else {
-                HttpLoggingInterceptor.Level.NONE
-            }
+    @Singleton
+    fun provideOkHttpClient(
+        authInterceptor: AuthInterceptor
+    ): OkHttpClient {
+        val logging = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
         }
+
         return OkHttpClient.Builder()
-            .addInterceptor(provideAuthInterceptor(auth))
-            .addInterceptor(loggingInterceptor)
+            .addInterceptor { chain ->
+                val original = chain.request()
+                val request = original.newBuilder()
+                    .header("Api-Key", ConfigUtils.getApiKey())
+                    .method(original.method, original.body)
+                    .build()
+                chain.proceed(request)
+            }
+            .addInterceptor(authInterceptor)
+            .addInterceptor(logging)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
             .build()
     }
-    private fun provideGson() = GsonBuilder()
-        .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
-        .create()
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(): Retrofit = Retrofit.Builder()
+        .baseUrl(ConfigUtils.getBaseUrl())
+        .addConverterFactory(GsonConverterFactory.create(provideGson()))
+        .client(provideOkHttpClient(provideAuthInterceptor()))
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideAuthInterceptor(): AuthInterceptor = AuthInterceptor()
+
+    @Provides
+    @Singleton
+    fun provideApiService(retrofit: Retrofit): ApiService =
+        retrofit.create(ApiService::class.java)
 }

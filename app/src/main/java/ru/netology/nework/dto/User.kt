@@ -9,7 +9,10 @@ data class User(
     val id: Long,
     val login: String,
     val name: String,
-    val avatar: String? = null
+    val avatar: String? = null,
+    val following: Boolean = false,
+    val followers: Int = 0,
+    val followingCount: Int = 0
 )
 data class UserResponse(
     val id: Long,
@@ -20,7 +23,6 @@ data class UserResponse(
 )
 data class Job(
     val id: Long,
-    val userId: Long,
     val name: String,
     val position: String,
     val start: Instant,
@@ -59,7 +61,7 @@ data class AuthenticationResponse(
 data class PostRequest(
     val id: Long = 0,
     val content: String,
-    val coords: Coordinates? = null,
+    val coords: Coords? = null,
     val link: String? = null,
     val attachment: MediaUpload? = null,
     val mentionIds: List<Long> = emptyList()
@@ -68,7 +70,7 @@ data class EventRequest(
     val id: Long = 0,
     val content: String,
     val datetime: Instant? = null,
-    val coords: Coordinates? = null,
+    val coords: Coords? = null,
     val type: EventType? = null,
     val attachment: MediaUpload? = null,
     val link: String? = null,

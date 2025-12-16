@@ -1,12 +1,11 @@
 package ru.netology.nework.dto
 
+import java.io.File
+
 data class MediaUpload(
-    val id: String
+    val file: File
 )
 data class MediaResponse(
     val id: String,
     val url: String
-)
-data class PhotoModel(
-    val uri: String? = null
 )

@@ -1,88 +1,169 @@
 package ru.netology.nework.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.auth.AuthState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
-import ru.netology.nework.api.ApiService
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import ru.netology.nework.R
 import ru.netology.nework.auth.AppAuth
-import ru.netology.nework.dto.LoginRequest
-import ru.netology.nework.dto.MediaUpload
-import ru.netology.nework.dto.RegisterRequest
-import ru.netology.nework.error.AppError
+import ru.netology.nework.repository.AuthRepository
+import ru.netology.nework.util.AndroidUtils
 import ru.netology.nework.util.SingleLiveEvent
+import ru.netology.nework.util.ValidationUtils
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
-    private val apiService: ApiService,
+    private val repository: AuthRepository,
     private val appAuth: AppAuth
 ) : ViewModel() {
-    private val _authState = MutableLiveData(false)
-    val authState: LiveData<Boolean> = _authState
-    private val _errorState = SingleLiveEvent<String>()
-    val errorState: LiveData<String> = _errorState
-    private val _loadingState = MutableLiveData(false)
-    val loadingState: LiveData<Boolean> = _loadingState
 
-    init {
-        _authState.value = appAuth.authStateFlow.value.isAuthorized
-    }
+    private val _data = MutableLiveData<AuthState>()
+    val data: LiveData<AuthState> = _data
+
+    private val _error = SingleLiveEvent<String>()
+    val error: LiveData<String> = _error
+
+    private val _validationError = MutableLiveData<Pair<String, Int>?>()
+    val validationError: LiveData<Pair<String, Int>?> = _validationError
+
+    private val _loading = MutableLiveData(false)
+    val loading: LiveData<Boolean> = _loading
 
     fun login(login: String, password: String) {
-        if (login.isBlank() || password.isBlank()) {
-            _errorState.postValue("Заполните все поля")
+
+        val loginValidation = ValidationUtils.validateLogin(login)
+        if (loginValidation is ValidationUtils.ValidationResult.Error) {
+            _validationError.value = "login" to loginValidation.messageResId
             return
         }
+
+        val passwordValidation = ValidationUtils.validatePassword(password)
+        if (passwordValidation is ValidationUtils.ValidationResult.Error) {
+            _validationError.value = "password" to passwordValidation.messageResId
+            return
+        }
+
+        _loading.value = true
         viewModelScope.launch {
             try {
-                _loadingState.value = true
-                val response = apiService.login(LoginRequest(login, password))
-                appAuth.setAuth(response.token, response.id)
-                _authState.value = true
+                val token = repository.login(login, password)
+                appAuth.setAuth(token.id, token.token)
+                _data.value = AuthState.Authorized
             } catch (e: Exception) {
-                if (e is AppError.ApiError && e.code == 400) {
-                    _errorState.postValue("Неправильный логин или пароль")
-                } else {
-                    _errorState.postValue("Ошибка сети: ${e.message}")
+                _loading.value = false
+                when {
+                    e.message?.contains("400") == true -> {
+                        _error.value = AndroidUtils.getString(R.string.error_wrong_login_or_password)
+                    }
+                    e.message?.contains("Network") == true -> {
+                        _error.value = AndroidUtils.getString(R.string.no_internet)
+                    }
+                    else -> {
+                        _error.value = e.message ?: AndroidUtils.getString(R.string.error_occurred)
+                    }
                 }
-                _authState.value = false
-            } finally {
-                _loadingState.value = false
             }
         }
     }
-    fun register(login: String, password: String, name: String, avatar: String? = null) {
-        if (login.isBlank() || password.isBlank()) {
-            _errorState.postValue("Заполните все обязательные поля")
+
+    fun register(
+        login: String,
+        password: String,
+        name: String,
+        avatarUri: Uri?
+    ) {
+        val loginValidation = ValidationUtils.validateLogin(login)
+        if (loginValidation is ValidationUtils.ValidationResult.Error) {
+            _validationError.value = "login" to loginValidation.messageResId
             return
         }
+
+        val nameValidation = ValidationUtils.validateName(name)
+        if (nameValidation is ValidationUtils.ValidationResult.Error) {
+            _validationError.value = "name" to nameValidation.messageResId
+            return
+        }
+
+        val passwordValidation = ValidationUtils.validatePassword(password)
+        if (passwordValidation is ValidationUtils.ValidationResult.Error) {
+            _validationError.value = "password" to passwordValidation.messageResId
+            return
+        }
+
+        avatarUri?.let { uri ->
+            val filePath = AndroidUtils.getFilePathFromUri(uri)
+            val avatarValidation = ValidationUtils.validateAvatar(filePath)
+            if (avatarValidation is ValidationUtils.ValidationResult.Error) {
+                _validationError.value = "avatar" to avatarValidation.messageResId
+                return
+            }
+        }
+
+        _loading.value = true
         viewModelScope.launch {
             try {
-                _loadingState.value = true
-                val request = RegisterRequest(login, password, name, avatar?.let { MediaUpload(it) })
-                val response = apiService.register(request)
-                appAuth.setAuth(response.token, response.id)
-                _authState.value = true
-            } catch (e: Exception) {
-                if (e is AppError.ApiError && e.code == 400) {
-                    _errorState.postValue("Пользователь с таким логином уже зарегистрирован")
-                } else {
-                    _errorState.postValue("Ошибка регистрации: ${e.message}")
+                val avatarPart = avatarUri?.let { uri ->
+                    val file = File(AndroidUtils.getFilePathFromUri(uri) ?: return@let null)
+                    MultipartBody.Part.createFormData(
+                        "file",
+                        file.name,
+                        file.asRequestBody("image/*".toMediaType())
+                    )
                 }
-                _authState.value = false
-            } finally {
-                _loadingState.value = false
+
+                val loginBody = login.toRequestBody("text/plain".toMediaType())
+                val passwordBody = password.toRequestBody("text/plain".toMediaType())
+                val nameBody = name.toRequestBody("text/plain".toMediaType())
+
+                val token = repository.register(
+                    login = loginBody,
+                    password = passwordBody,
+                    name = nameBody,
+                    avatar = avatarPart
+                )
+                appAuth.setAuth(token.id, token.token)
+                _data.value = AuthState.Authorized
+            } catch (e: Exception) {
+                _loading.value = false
+                when {
+                    e.message?.contains("400") == true -> {
+                        _error.value = AndroidUtils.getString(R.string.error_user_already_exists)
+                    }
+                    e.message?.contains("Network") == true -> {
+                        _error.value = AndroidUtils.getString(R.string.no_internet)
+                    }
+                    else -> {
+                        _error.value = e.message ?: AndroidUtils.getString(R.string.error_occurred)
+                    }
+                }
             }
         }
     }
+
     fun logout() {
-        appAuth.removeAuth()
-        _authState.value = false
+        viewModelScope.launch {
+            try {
+                appAuth.removeAuth()
+                _data.value = AuthState.Unauthorized
+            } catch (e: Exception) {
+                _error.value = e.message ?: AndroidUtils.getString(R.string.error_occurred)
+            }
+        }
     }
-    fun checkAuth() {
-        _authState.value = appAuth.authStateFlow.value.isAuthorized
+
+    fun clearValidationError() {
+        _validationError.value = null
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }

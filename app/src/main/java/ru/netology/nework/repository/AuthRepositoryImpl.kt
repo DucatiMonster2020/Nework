@@ -1,6 +1,8 @@
 package ru.netology.nework.repository
 
+import android.media.session.MediaSession
 import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import ru.netology.nework.api.ApiService
 import ru.netology.nework.dto.AuthenticationResponse
@@ -10,6 +12,7 @@ import ru.netology.nework.dto.MediaUpload
 import ru.netology.nework.dto.RegisterRequest
 import ru.netology.nework.error.asAppError
 import java.io.File
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,44 +20,58 @@ import javax.inject.Singleton
 class AuthRepositoryImpl @Inject constructor(
     private val apiService: ApiService
 ) : AuthRepository {
-    override suspend fun login(login: String, password: String): AuthenticationResponse {
+
+    override suspend fun login(login: String, password: String): Token {
         try {
-            return apiService.login(LoginRequest(login, password))
+            val response = apiService.loginUser(login, password)
+            if (!response.isSuccessful) {
+                when (response.code()) {
+                    400 -> throw ApiError(400, "Неправильный логин или пароль")
+                    else -> throw ApiError(response.code(), response.message())
+                }
+            }
+
+            return response.body() ?: throw ApiError(response.code(), response.message())
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
     override suspend fun register(
-        login: String,
-        password: String,
-        name: String,
-        avatar: File?
-    ): AuthenticationResponse {
+        login: RequestBody,
+        password: RequestBody,
+        name: RequestBody,
+        avatar: MultipartBody.Part?
+    ): Token {
         try {
-            val avatarUpload = avatar?.let { uploadAvatar(it) }
-            val request = RegisterRequest(
-                login = login,
-                pass = password,
-                name = name,
-                file = avatarUpload?.let { MediaUpload(it.id) }
-            )
-            return apiService.register(request)
+            val response = apiService.registerUser(login, password, name, avatar)
+            if (!response.isSuccessful) {
+                when (response.code()) {
+                    400 -> throw ApiError(400, "Пользователь с таким логином уже зарегистрирован")
+                    else -> throw ApiError(response.code(), response.message())
+                }
+            }
+
+            return response.body() ?: throw ApiError(response.code(), response.message())
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 
-    override suspend fun uploadAvatar(file: File): MediaResponse {
+    override suspend fun logout() {
         try {
-            val part = MultipartBody.Part.createFormData(
-                "file",
-                file.name,
-                file.asRequestBody()
-            )
-            return apiService.uploadMedia(part)
+            val response = apiService.logoutUser()
+            if (!response.isSuccessful) {
+                throw ApiError(response.code(), response.message())
+            }
+        } catch (e: IOException) {
+            throw NetworkError
         } catch (e: Exception) {
-            throw e.asAppError()
+            throw UnknownError
         }
     }
 }

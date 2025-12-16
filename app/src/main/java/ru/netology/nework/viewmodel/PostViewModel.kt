@@ -1,143 +1,170 @@
 package ru.netology.nework.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.*
 import androidx.paging.PagingData
 import androidx.paging.map
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import ru.netology.nework.auth.AppAuth
-import ru.netology.nework.dto.Coordinates
+import ru.netology.nework.dto.Coords
+import ru.netology.nework.dto.MediaUpload
 import ru.netology.nework.dto.Post
-import ru.netology.nework.dto.PostRequest
-import ru.netology.nework.error.AppError
-import ru.netology.nework.error.asAppError
-import ru.netology.nework.model.FeedModel
-import ru.netology.nework.model.PostContentModel
 import ru.netology.nework.repository.*
 import ru.netology.nework.util.SingleLiveEvent
-import java.time.Instant
 import javax.inject.Inject
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class PostViewModel @Inject constructor(
-    private val repository: PostRepository,
-    private val auth: AppAuth
+    private val repository: PostRepository
 ) : ViewModel() {
-    private val _feedState = MutableLiveData(FeedModel())
-    val feedState: LiveData<FeedModel> = _feedState
-    private val _postContentState = MutableLiveData(PostContentModel())
-    val postContentState: LiveData<PostContentModel> = _postContentState
-    private val _errorState = SingleLiveEvent<AppError>()
-    val errorState: LiveData<AppError> = _errorState
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val data: Flow<PagingData<Post>> = auth
-        .authStateFlow
-        .flatMapLatest { (token, _) ->
-            repository.data.map { pagingData ->
-                pagingData.map { post ->
-                    post.copy(ownedByMe = post.authorId == auth.authStateFlow.value.userId)
-                }
-            }
-        }
-    fun loadPosts() {
-        viewModelScope.launch {
-            try {
-                _feedState.value = FeedModel(loading = true)
-                repository.getAll()
-                _feedState.value = FeedModel(loading = false)
-            } catch (e: Exception) {
-                _feedState.value = FeedModel(loading = false, error = e.asAppError())
-                _errorState.postValue(e.asAppError())
-            }
-        }
-    }
-    fun refresh() {
-        viewModelScope.launch {
-            try {
-                _feedState.value = FeedModel(refreshing = true)
-                repository.getAll()
-                _feedState.value = FeedModel(refreshing = false)
-            } catch (e: Exception) {
-                _feedState.value = FeedModel(refreshing = false, error = e.asAppError())
-                _errorState.postValue(e.asAppError())
-            }
+    private val _dataState = MutableLiveData(FeedModelState())
+    val dataState: LiveData<FeedModelState> = _dataState
+
+    private val _error = SingleLiveEvent<String>()
+    val error: LiveData<String> = _error
+
+    private val _postCreated = MutableLiveData(false)
+    val postCreated: LiveData<Boolean> = _postCreated
+
+    private val _currentPost = MutableLiveData<Post?>()
+    val currentPost: LiveData<Post?> = _currentPost
+
+    private val _coordinates = MutableLiveData<Coords?>(null)
+    val coordinates: LiveData<Coords?> = _coordinates
+
+    val data: Flow<PagingData<Post>> = repository.data
+        .cachedIn(viewModelScope)
+
+    fun loadPosts() = viewModelScope.launch {
+        try {
+            _dataState.value = FeedModelState(loading = true)
+            // Paging 3 автоматически загружает данные
+            _dataState.value = FeedModelState()
+        } catch (e: Exception) {
+            _dataState.value = FeedModelState(error = true)
+            _error.value = e.message ?: "Ошибка загрузки постов"
         }
     }
-    fun likeById(id: Long) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                repository.likeById(id)
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun likeById(id: Long) = viewModelScope.launch {
+        try {
+            repository.likeById(id)
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка при лайке"
         }
     }
-    fun unlikeById(id: Long) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                repository.unlikeById(id)
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun unlikeById(id: Long) = viewModelScope.launch {
+        try {
+            repository.unlikeById(id)
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка при удалении лайка"
         }
     }
-    fun removeById(id: Long) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                repository.removeById(id)
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun removeById(id: Long) = viewModelScope.launch {
+        try {
+            repository.removeById(id)
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка при удалении поста"
         }
     }
-    fun save(post: PostRequest) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                val postToSave = Post(
-                    id = post.id,
-                    authorId = auth.authStateFlow.value.userId,
-                    author = "",
-                    content = post.content,
-                    published = Instant.now(),
-                    coords = post.coords,
-                    link = post.link,
-                    mentionIds = post.mentionIds
-                )
-                repository.save(postToSave)
-                clearContent()
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun createPost(
+        content: String,
+        mediaUpload: MediaUpload? = null,
+        link: String? = null,
+        mentionIds: List<Long> = emptyList()
+    ) = viewModelScope.launch {
+        try {
+            _dataState.value = FeedModelState(loading = true)
+
+            val coords = _coordinates.value
+
+            repository.save(
+                content = content,
+                mediaUpload = mediaUpload,
+                link = link,
+                coords = coords,
+                mentionIds = mentionIds
+            )
+
+            _postCreated.value = true
+            _coordinates.value = null
+            _dataState.value = FeedModelState()
+        } catch (e: Exception) {
+            _dataState.value = FeedModelState(error = true)
+            _error.value = e.message ?: "Ошибка при создании поста"
+            _postCreated.value = false
         }
     }
-    fun updateContent(content: String) {
-        _postContentState.value = _postContentState.value?.copy(content = content)
+
+    fun updatePost(
+        id: Long,
+        content: String,
+        mediaUpload: MediaUpload? = null,
+        link: String? = null,
+        mentionIds: List<Long> = emptyList()
+    ) = viewModelScope.launch {
+        try {
+            _dataState.value = FeedModelState(loading = true)
+
+            val coords = _coordinates.value
+            repository.update(
+                id = id,
+                content = content,
+                mediaUpload = mediaUpload,
+                link = link,
+                coords = coords,
+                mentionIds = mentionIds
+            )
+
+            _postCreated.value = true
+            _coordinates.value = null
+            _dataState.value = FeedModelState()
+        } catch (e: Exception) {
+            _dataState.value = FeedModelState(error = true)
+            _error.value = e.message ?: "Ошибка при обновлении поста"
+            _postCreated.value = false
+        }
     }
-    fun updateLink(link: String?) {
-        _postContentState.value = _postContentState.value?.copy(link = link)
+
+    fun loadPost(id: Long) = viewModelScope.launch {
+        try {
+            _dataState.value = FeedModelState(loading = true)
+            val post = repository.getById(id)
+            _currentPost.value = post
+            _dataState.value = FeedModelState()
+        } catch (e: Exception) {
+            _dataState.value = FeedModelState(error = true)
+            _error.value = e.message ?: "Ошибка загрузки поста"
+        }
     }
-    fun updateCoordinates(coords: Coordinates?) {
-        _postContentState.value = _postContentState.value?.copy(coordinates = coords)
+
+    fun setCoordinates(lat: Double, long: Double) {
+        _coordinates.value = Coords(lat.toString(), long.toString())
     }
-    fun updateMentionIds(mentionIds: List<Long>) {
-        _postContentState.value = _postContentState.value?.copy(mentionIds = mentionIds)
+
+    fun clearCoordinates() {
+        _coordinates.value = null
     }
-    fun clearContent() {
-        _postContentState.value = PostContentModel()
+
+    fun uploadMedia(uri: Uri): Flow<String> {
+        return repository.uploadMedia(uri).map { media ->
+            media.url
+        }
     }
-    fun loadPostById(id: Long) {
-        viewModelScope.launch {
-            try {
-                val post = repository.getPostById(id)
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun refresh() = viewModelScope.launch {
+        try {
+            repository.refresh()
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка обновления"
         }
     }
 }

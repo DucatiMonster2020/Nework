@@ -1,44 +1,41 @@
 package ru.netology.nework.adapter
 
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
+import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import ru.netology.nework.R
-import ru.netology.nework.databinding.ItemEventBinding
+import ru.netology.nework.databinding.CardEventBinding
+import ru.netology.nework.dto.Attachment
 import ru.netology.nework.dto.Event
-import ru.netology.nework.enumeration.AttachmentType
 import ru.netology.nework.enumeration.EventType
 import ru.netology.nework.util.AndroidUtils
+import ru.netology.nework.util.ValidationUtils
 
 interface EventInteractionListener {
-    fun onLikeClicked(event: Event)
-    fun onParticipateClicked(event: Event)
-    fun onEventClicked(event: Event)
-    fun onAvatarClicked(event: Event)
-    fun onLinkClicked(event: Event)
-    fun onMenuClicked(event: Event, anchor: View)
-    fun onAttachmentClicked(event: Event)
-    fun onSpeakersClicked(event: Event)
-    fun onParticipantsClicked(event: Event)
+    fun onLike(event: Event) {}
+    fun onEdit(event: Event) {}
+    fun onRemove(event: Event) {}
+    fun onParticipate(event: Event) {}
+    fun onShare(event: Event) {}
+    fun onVideoPlay(event: Event, videoUrl: String) {}
+    fun onAudioPlay(event: Event, audioUrl: String) {}
+    fun onClick(event: Event) {}
+    fun onAvatarClick(event: Event) {}
+    fun onLinkClick(url: String) {}
 }
+
 class EventsAdapter(
-    private val listener: EventInteractionListener
-) : ListAdapter<Event, EventsAdapter.EventViewHolder>(EventDiffCallback()) {
-    override fun onCreateViewHolder(
-        parent: ViewGroup,
-        viewType: Int
-    ): EventViewHolder {
-        val binding = ItemEventBinding.inflate(
-            LayoutInflater.from(parent.context),
-            parent,
-            false
-        )
-        return EventViewHolder(binding, listener)
+    private val interactionListener: EventInteractionListener
+) : PagingDataAdapter<Event, EventViewHolder>(EventDiffCallback()) {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): EventViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        val binding = CardEventBinding.inflate(inflater, parent, false)
+        return EventViewHolder(binding, interactionListener)
     }
 
     override fun onBindViewHolder(holder: EventViewHolder, position: Int) {
@@ -47,94 +44,181 @@ class EventsAdapter(
             holder.bind(event)
         }
     }
-    class EventViewHolder(
-        private val binding: ItemEventBinding,
-        private val listener: EventInteractionListener
-    ) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(event: Event) {
-            binding.apply {
-                textViewAuthor.text = event.author
-                textViewPublished.text = event.formattedPublished
-                textViewDateTime.text = event.formattedDatetime
-                textViewContent.text = event.content
-                buttonLike.text = event.getLikesCount().toString()
-                imageButtonLike.isChecked = event.likedByMe
-                buttonParticipants.text = event.getParticipantsCount().toString()
-                buttonParticipate.isChecked = event.participatedByMe
-                textViewEventType.text = when (event.type) {
-                    EventType.ONLINE -> "Онлайн"
-                    EventType.OFFLINE -> "Офлайн"
-                }
-                buttonSpeakers.text = event.getSpeakersCount().toString()
-                event.authorAvatar?.let { avatarUrl ->
-                    Glide.with(imageViewAvatar)
-                        .load(avatarUrl)
-                        .placeholder(R.drawable.ic_avatar_placeholder)
-                        .circleCrop()
-                        .into(imageViewAvatar)
-                } ?: run {
-                    imageViewAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
-                }
-                textViewAuthorJob.text = event.authorJob ?: "В поиске работы"
-                textViewAuthorJob.isVisible = event.authorJob != null
-                event.attachment?.let { attachment ->
-                    when (attachment.type) {
-                        AttachmentType.IMAGE -> {
-                            imageViewAttachment.isVisible = true
-                            Glide.with(imageViewAttachment)
-                                .load(attachment.url)
-                                .into(imageViewAttachment)
-                        }
-                        AttachmentType.AUDIO -> {}
-                        AttachmentType.VIDEO -> {}
+}
+
+class EventViewHolder(
+    private val binding: CardEventBinding,
+    private val interactionListener: EventInteractionListener
+) : RecyclerView.ViewHolder(binding.root) {
+
+    private var currentEvent: Event? = null
+
+    init {
+        setupClickListeners()
+    }
+
+    private fun setupClickListeners() {
+        binding.likeButton.setOnClickListener {
+            currentEvent?.let { event ->
+                interactionListener.onLike(event)
+            }
+        }
+
+        binding.menuButton.setOnClickListener {
+            currentEvent?.let { event ->
+                showPopupMenu(event)
+            }
+        }
+
+        binding.shareButton.setOnClickListener {
+            currentEvent?.let { event ->
+                interactionListener.onShare(event)
+            }
+        }
+
+        binding.participateButton.setOnClickListener {
+            currentEvent?.let { event ->
+                interactionListener.onParticipate(event)
+            }
+        }
+
+        binding.root.setOnClickListener {
+            currentEvent?.let { event ->
+                interactionListener.onClick(event)
+            }
+        }
+
+        binding.authorAvatar.setOnClickListener {
+            currentEvent?.let { event ->
+                interactionListener.onAvatarClick(event)
+            }
+        }
+
+        binding.attachmentImageView.setOnClickListener {
+            currentEvent?.attachment?.let { attachment ->
+                when (attachment.type) {
+                    Attachment.Type.VIDEO -> {
+                        interactionListener.onVideoPlay(currentEvent!!, attachment.url)
                     }
-                } ?: run {
-                    imageViewAttachment.setVisible(false)
+                    Attachment.Type.IMAGE -> {
+                        // Показать полноэкранное изображение
+                    }
+                    else -> {}
                 }
-                event.link?.let { link ->
-                    textViewLink.text = linktextViewLink.isVisible = true
-                } ?: run {
-                    textViewLink.isVisible = false
-                }
-                imageButtinMenu.setVisible(event.ownedByMe)
-                buttonLike.setOnCLickListener {
-                    listener.onLikeClicked(event)
-                }
-                buttonParticipate.setOnClickListener {
-                    listener.onParticipateClicked(event)
-                }
-                imageViewAvatar.setOnCLickListener {
-                    listener.onAvatarClicked(event)
-                }
-                imageButtonMenu.setOnCLickListener {
-                    listener.onMenuClicked(event, it)
-                }
-                textViewLink.setOnClickListener {
-                    listener.onLinkClicked(event)
-                }
-                imageViewAttachment.setOnClickListener {
-                    listener.onAttachmentClicked(event)
-                }
-                textViewSpeakersCount.setOnCLickListener {
-                    listener.onSpeakersClicked(event)
-                }
-                textViewParticipantsCount.setOnClickListener {
-                    listener.onParticipantsClicked(event)
-                }
-                root.setOnClickListener {
-                    listener.onEventClicked(event)
-                }
-                AndroidUtils.fixRecyclerViewItem(root)
+            }
+        }
+
+        binding.linkTextView.setOnClickListener {
+            currentEvent?.link?.let { url ->
+                interactionListener.onLinkClick(url)
             }
         }
     }
-    class EventDiffCallback : DiffUtil.ItemCallback<Event>() {
-        override fun areItemsTheSame(oldItem: Event, newItem: Event): Boolean {
-            return oldItem.id == newItem.id
+
+    fun bind(event: Event) {
+        currentEvent = event
+
+        // Автор
+        binding.authorName.text = event.author
+        Glide.with(binding.authorAvatar)
+            .load(event.authorAvatar)
+            .circleCrop()
+            .placeholder(R.drawable.ic_avatar_placeholder)
+            .into(binding.authorAvatar)
+
+        // Даты по ТЗ: dd.MM.yyyy HH:mm
+        binding.published.text = ValidationUtils.formatPublishedDateTime(event.published)
+        binding.eventDateTime.text = ValidationUtils.formatEventDateTime(event)
+
+        // Тип события
+        binding.eventType.text = when (event.type) {
+            EventType.ONLINE -> binding.root.context.getString(R.string.online)
+            EventType.OFFLINE -> binding.root.context.getString(R.string.offline)
         }
 
-        override fun areContentsTheSame(oldItem: Event, newItem: Event): Boolean {
-            return oldItem == newItem
+        // Текст события
+        binding.content.text = event.content
+
+        // Лайки
+        binding.likeButton.isChecked = event.likedByMe
+        binding.likeCount.text = AndroidUtils.formatCount(event.likes)
+
+        // Участие
+        binding.participateButton.isChecked = event.participatedByMe
+        binding.participantsCount.text = event.participantsIds.size.toString()
+
+        // Вложение
+        val attachment = event.attachment
+        binding.attachmentGroup.isVisible = attachment != null
+        if (attachment != null) {
+            when (attachment.type) {
+                Attachment.Type.IMAGE -> {
+                    binding.attachmentImageView.isVisible = true
+                    binding.audioView.isVisible = false
+                    binding.videoView.isVisible = false
+                    Glide.with(binding.attachmentImageView)
+                        .load(attachment.url)
+                        .into(binding.attachmentImageView)
+                }
+                Attachment.Type.AUDIO -> {
+                    binding.attachmentImageView.isVisible = false
+                    binding.audioView.isVisible = true
+                    binding.videoView.isVisible = false
+                    // Настройка аудиоплеера
+                }
+                Attachment.Type.VIDEO -> {
+                    binding.attachmentImageView.isVisible = true
+                    binding.audioView.isVisible = false
+                    binding.videoView.isVisible = true
+                    Glide.with(binding.attachmentImageView)
+                        .load(attachment.previewUrl ?: attachment.url)
+                        .into(binding.attachmentImageView)
+                }
+            }
         }
+
+        // Ссылка
+        binding.linkGroup.isVisible = !event.link.isNullOrBlank()
+        event.link?.let { link ->
+            binding.linkTextView.text = AndroidUtils.extractDomain(link)
+        }
+
+        // Меню (только для своих событий)
+        binding.menuButton.isVisible = event.ownedByMe
+
+        // Спикеры (если есть)
+        val hasSpeakers = event.speakerIds.isNotEmpty()
+        binding.speakersGroup.isVisible = hasSpeakers
+        if (hasSpeakers) {
+            val speakerNames = event.speakers.take(3).joinToString(", ") { it.name }
+            binding.speakersText.text = speakerNames
+            if (event.speakerIds.size > 3) {
+                binding.speakersMore.text = binding.root.context.getString(
+                    R.string.and_more,
+                    event.speakerIds.size - 3
+                )
+            } else {
+                binding.speakersMore.text = ""
+            }
+        }
+    }
+
+    private fun showPopupMenu(event: Event) {
+        AndroidUtils.showPopupMenu(
+            binding.menuButton,
+            menuRes = R.menu.event_menu,
+            onEditClick = { interactionListener.onEdit(event) },
+            onDeleteClick = { interactionListener.onRemove(event) }
+        )
+    }
+}
+
+class EventDiffCallback : DiffUtil.ItemCallback<Event>() {
+    override fun areItemsTheSame(oldItem: Event, newItem: Event): Boolean {
+        return oldItem.id == newItem.id
+    }
+
+    override fun areContentsTheSame(oldItem: Event, newItem: Event): Boolean {
+        return oldItem == newItem
     }
 }

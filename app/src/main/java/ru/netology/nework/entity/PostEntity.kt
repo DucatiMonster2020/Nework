@@ -17,18 +17,19 @@ data class PostEntity(
     val id: Long,
     val authorId: Long,
     val author: String,
-    val authorAvatar: String? = null,
-    val authorJob: String? = null,
+    val authorAvatar: String?,
+    val authorJob: String?,
     val content: String,
     val published: Instant,
-    val coords: Coordinates? = null,
-    val link: String? = null,
-    val likeOwnerIds: List<Long> = emptyList(),
-    val likedByMe: Boolean = false,
-    val attachment: Attachment? = null,
-    val mentionIds: List<Long> = emptyList(),
-    val mentionedMe: Boolean = false,
-    val users: Map<Long, UserPreview> = emptyMap()
+    val coords: Coordinates?,
+    val link: String?,
+    val mentionIds: List<Long>,
+    val mentionedMe: Boolean,
+    val likeOwnerIds: List<Long>,
+    val likedByMe: Boolean,
+    val attachment: Attachment?,
+    val ownedByMe: Boolean,
+    val users: Map<Long, UserPreview>
     ) {
     fun toDto() = Post(
         id = id,
@@ -40,11 +41,12 @@ data class PostEntity(
         published = published,
         coords = coords,
         link = link,
+        mentionIds = mentionIds,
+        mentionedMe = mentionedMe,
         likeOwnerIds = likeOwnerIds,
         likedByMe = likedByMe,
         attachment = attachment,
-        mentionIds = mentionIds,
-        mentionedMe = mentionedMe,
+        ownedByMe = ownedByMe,
         users = users
     )
     companion object {
@@ -58,12 +60,15 @@ data class PostEntity(
             published = dto.published,
             coords = dto.coords,
             link = dto.link,
+            mentionIds = dto.mentionIds,
+            mentionedMe = dto.mentionedMe,
             likeOwnerIds = dto.likeOwnerIds,
             likedByMe = dto.likedByMe,
             attachment = dto.attachment,
-            mentionIds = dto.mentionIds,
-            mentionedMe = dto.mentionedMe,
+            ownedByMe = dto.ownedByMe,
             users = dto.users
         )
     }
 }
+fun List<PostEntity>.toDto(): List<Post> = map { it.toDto() }
+fun List<Post>.toEntity(): List<PostEntity> = map { PostEntity.fromDto(it) }

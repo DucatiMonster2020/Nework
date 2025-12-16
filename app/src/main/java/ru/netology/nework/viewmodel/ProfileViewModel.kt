@@ -1,20 +1,19 @@
 package ru.netology.nework.viewmodel
 
+import android.net.Uri
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.dto.Job
-import ru.netology.nework.dto.MediaUpload
-import ru.netology.nework.dto.UserResponse
-import ru.netology.nework.error.AppError
-import ru.netology.nework.error.asAppError
-import ru.netology.nework.model.ProfileModel
-import ru.netology.nework.model.ProfileTab
+import ru.netology.nework.dto.Post
+import ru.netology.nework.dto.User
+import ru.netology.nework.repository.PostRepository
 import ru.netology.nework.repository.UserRepository
 import ru.netology.nework.util.SingleLiveEvent
 import java.io.File
@@ -22,128 +21,154 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
-    private val repository: UserRepository,
-    private val auth: AppAuth
+    private val userRepository: UserRepository,
+    private val postRepository: PostRepository
 ) : ViewModel() {
-    private val _profileState = MutableLiveData(ProfileModel())
-    val profileState: LiveData<ProfileModel> = _profileState
-    private val _errorState = SingleLiveEvent<AppError>()
-    val errorState: LiveData<AppError> = _errorState
-    private val _uploadProgress = MutableLiveData<Int?>(null)
-    val uploadProgress: LiveData<Int?> = _uploadProgress
 
-    fun loadMyProfile() {
-        val userId = auth.authStateFlow.value.userId
-        if (userId != 0L) {
-            loadProfile(userId, isMyProfile = true)
+    private val _dataState = MutableLiveData(FeedModelState())
+    val dataState: LiveData<FeedModelState> = _dataState
+
+    private val _error = SingleLiveEvent<String>()
+    val error: LiveData<String> = _error
+
+    private val _loading = MutableLiveData(false)
+    val loading: LiveData<Boolean> = _loading
+
+    private val _profile = MutableLiveData<User?>()
+    val profile: LiveData<User?> = _profile
+
+    private val _jobs = MutableLiveData<List<Job>>()
+    val jobs: LiveData<List<Job>> = _jobs
+
+    private val _lastJob = MutableLiveData<Job?>()
+    val lastJob: LiveData<Job?> = _lastJob
+
+    val wallPosts: Flow<PagingData<Post>> = postRepository.wallData
+        .cachedIn(viewModelScope)
+
+    fun loadProfile() = viewModelScope.launch {
+        try {
+            _loading.value = true
+            val user = userRepository.getMyProfile()
+            _profile.value = user
+            _loading.value = false
+        } catch (e: Exception) {
+            _loading.value = false
+            _error.value = e.message ?: "Ошибка загрузки профиля"
         }
     }
-    fun loadProfile(userId: Long, isMyProfile: Boolean = false) {
-        viewModelScope.launch {
-            try {
-                _profileState.value = ProfileModel(loading = true)
-                val user = repository.getUserById(userId)
-                val jobs = repository.getUserJobs(userId)
-                val posts = if (isMyProfile) {
-                    repository.getMyWall(0, 20)
-                } else {
-                    repository.getUserWall(userId, 0, 20)
-                }
-                _profileState.value = ProfileModel(
-                    user = user,
-                    jobs = jobs,
-                    posts = posts,
-                    loading = false,
-                    isMyProfile = isMyProfile
-                )
-            } catch (e: Exception) {
-                _profileState.value = ProfileModel(loading = false, error = e.asAppError())
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun loadWall() = viewModelScope.launch {
+        try {
+            _dataState.value = FeedModelState(loading = true)
+            // Paging 3 автоматически загружает данные
+            _dataState.value = FeedModelState()
+        } catch (e: Exception) {
+            _dataState.value = FeedModelState(error = true)
+            _error.value = e.message ?: "Ошибка загрузки стены"
         }
     }
-    fun refreshProfile() {
-        val currentState = _profileState.value
-        if (currentState?.user?.id !=null) {
-            loadProfile(currentState.user!!.id, currentState.isMyProfile)
+
+    fun loadJobs() = viewModelScope.launch {
+        try {
+            _loading.value = true
+            val jobsList = userRepository.getMyJobs()
+            _jobs.value = jobsList
+
+            // Находим последнюю работу
+            val currentJob = jobsList.firstOrNull { it.end == null }
+            val lastJob = currentJob ?: jobsList.maxByOrNull { it.start }
+            _lastJob.value = lastJob
+
+            _loading.value = false
+        } catch (e: Exception) {
+            _loading.value = false
+            _error.value = e.message ?: "Ошибка загрузки работ"
         }
     }
-    fun saveJob(job: Job) {
-        viewModelScope.launch {
-            try {
-                val savedJob = repository.saveJOb(job)
-                val currentState = _profileState.value
-                if (currentState != null) {
-                    val updatedJobs = currentState.jobs.toMutableList().apply {
-                        add(savedJob)
-                    }
-                    _profileState.value = currentState.copy(jobs = updatedJobs)
-                }
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun addJob(
+        company: String,
+        position: String,
+        startDate: String,
+        endDate: String?
+    ) = viewModelScope.launch {
+        try {
+            _loading.value = true
+            userRepository.saveJob(company, position, startDate, endDate)
+            loadJobs() // Обновляем список
+            _loading.value = false
+        } catch (e: Exception) {
+            _loading.value = false
+            _error.value = e.message ?: "Ошибка при добавлении работы"
         }
     }
-    fun deleteJob(jobId: Long) {
-        viewModelScope.launch {
-            try {
-                repository.deleteJob(jobId)
-                val currentState = _profileState.value
-                if (currentState != null) {
-                    val updatedJobs = currentState.jobs.filter { it.id != jobId }
-                    _profileState.value = currentState.copy(jobs = updatedJobs)
-                }
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun updateJob(
+        id: Long,
+        company: String,
+        position: String,
+        startDate: String,
+        endDate: String?
+    ) = viewModelScope.launch {
+        try {
+            _loading.value = true
+            userRepository.updateJob(id, company, position, startDate, endDate)
+            loadJobs() // Обновляем список
+            _loading.value = false
+        } catch (e: Exception) {
+            _loading.value = false
+            _error.value = e.message ?: "Ошибка при обновлении работы"
         }
     }
-    fun updateAvatar(avatarFile: File) {
-        viewModelScope.launch {
-            try {
-                _uploadProgress.value = 0
-                _uploadProgress.value = 50
-                val mediaUpload = MediaUpload(id = "temp_avatar")
-                val updatedUser = repository.updateAvatar(mediaUpload)
-                _uploadProgress.value = 100
-                val currentState = _profileState.value
-                if (currentState != null) {
-                    _profileState.value = currentState.copy(user = updatedUser)
-                }
-                delay(1000)
-                _uploadProgress.value = null
-            } catch (e: Exception) {
-                _uploadProgress.value = null
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun deleteJob(id: Long) = viewModelScope.launch {
+        try {
+            _loading.value = true
+            userRepository.removeJob(id)
+            loadJobs() // Обновляем список
+            _loading.value = false
+        } catch (e: Exception) {
+            _loading.value = false
+            _error.value = e.message ?: "Ошибка при удалении работы"
         }
     }
-    fun updateSelectedTab(tab: ProfileTab) {
-        val currentState = _profileState.value
-        if (currentState != null) {
-            _profileState.value = currentState.copy(selectedTab = tab)
+
+    fun uploadAvatar(uri: Uri) = viewModelScope.launch {
+        try {
+            _loading.value = true
+            userRepository.updateAvatar(uri)
+            loadProfile() // Обновляем профиль
+            _loading.value = false
+        } catch (e: Exception) {
+            _loading.value = false
+            _error.value = e.message ?: "Ошибка при обновлении аватара"
         }
     }
-    fun loadUserWall(userId: Long) {
-        viewModelScope.launch {
-            try {
-                val posts = repository.getUserWall(userId, 0, 50)
-                val currentState = _profileState.value
-                if (currentState != null) {
-                    _profileState.value = currentState.copy(posts = posts)
-                }
-            } catch (e: Exception) {
-                _errorState.postValue(e.asAppError())
-            }
+
+    fun likePost(id: Long) = viewModelScope.launch {
+        try {
+            postRepository.likeById(id)
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка при лайке"
         }
     }
-    fun clearProfile() {
-        _profileState.value = ProfileModel()
+
+    fun deletePost(id: Long) = viewModelScope.launch {
+        try {
+            postRepository.removeById(id)
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка при удалении поста"
+        }
     }
-    fun getCurrentUser(): UserResponse? {
-        return _profileState.value?.user
-    }
-    fun isCurrentUserProfile(): Boolean {
-        return _profileState.value?.isMyProfile ?: false
+
+    fun refresh() = viewModelScope.launch {
+        try {
+            loadProfile()
+            loadJobs()
+        } catch (e: Exception) {
+            _error.value = e.message ?: "Ошибка обновления"
+        }
     }
 }
+

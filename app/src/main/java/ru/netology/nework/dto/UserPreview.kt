@@ -1,6 +1,7 @@
 package ru.netology.nework.dto
 
 data class UserPreview(
-    val name: String,
-    val avatar: String?
+    val id: Long = 0,
+    val name: String = "",
+    val avatar: String? = null
 )

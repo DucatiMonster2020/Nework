@@ -17,8 +17,8 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField "String", "BASE_URL", '"http://94.228.125.136:8080/"'
-        buildConfigField "String", "API_KEY", '"c1378193-bc0t-42c8-a502-b8d66di"'
+        buildConfigField "String", "BASE_URL", "\"${project.findProperty("BASE_URL") ?: System.getenv("BASE_URL") ?: "http//94.228.125.136:8080/"}\""
+        buildConfigField "String", "API_KEY", "\"${project.findProperty("API_KEY") ?: System.getenv("API_KEY") ?: ""}\""
     }
 
     compileOptions {
@@ -60,6 +60,12 @@ dependencies {
     implementation 'com.google.android.gms:play-services-fido:21.2.0'
     implementation 'androidx.paging:paging-common:3.3.6'
     implementation 'androidx.privacysandbox.tools:tools-core:1.0.0-alpha13'
+    implementation 'com.google.android.gms:play-services-maps:19.2.0'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+    implementation 'com.google.firebase:firebase-crashlytics-buildtools:3.0.6'
+    implementation 'com.google.android.gms:play-services-fitness:21.3.0'
+    implementation 'androidx.compose.ui:ui-text:1.10.0'
+    implementation 'com.google.firebase:protolite-well-known-types:18.0.1'
     def appcompat_version = "1.7.1"
     def constraintlayout_version = "2.2.1"
     def swiperefreshlayout_version = "1.1.0"

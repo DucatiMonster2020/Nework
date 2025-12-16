@@ -6,33 +6,22 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.navArgs
-import androidx.viewpager2.widget.ViewPager2
 import com.bumptech.glide.Glide
-import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import ru.netology.nework.R
-import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.databinding.FragmentUserProfileBinding
-import ru.netology.nework.model.ProfileTab
 import ru.netology.nework.viewmodel.UserViewModel
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class UserProfileFragment : Fragment() {
 
-    @Inject
-    lateinit var appAuth: AppAuth
-
     private val viewModel: UserViewModel by viewModels()
+    private val args: UserProfileFragmentArgs by navArgs()
+
     private var _binding: FragmentUserProfileBinding? = null
     private val binding get() = _binding!!
-
-    private val args: UserProfileFragmentArgs by navArgs()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -46,81 +35,87 @@ class UserProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        setupToolbar()
         setupViewPager()
         setupObservers()
-        loadProfile()
+
+        viewModel.loadUser(args.userId)
+        viewModel.loadUserJobs(args.userId)
+    }
+
+    private fun setupToolbar() {
+        binding.toolbar.apply {
+            setNavigationOnClickListener {
+                findNavController().navigateUp()
+            }
+            setOnMenuItemClickListener { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.follow -> {
+                        viewModel.followUser(args.userId)
+                        true
+                    }
+                    R.id.unfollow -> {
+                        viewModel.unfollowUser(args.userId)
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
     }
 
     private fun setupViewPager() {
-        val pagerAdapter = ProfilePagerAdapter(this, isMyProfile = false)
+        val pagerAdapter = UserProfilePagerAdapter(this, args.userId)
         binding.viewPager.adapter = pagerAdapter
 
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = when (position) {
-                0 -> "Стена"
-                1 -> "Работы"
+                0 -> getString(R.string.wall)
+                1 -> getString(R.string.jobs)
                 else -> ""
             }
         }.attach()
-
-        binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-            override fun onPageSelected(position: Int) {
-                viewModel.updateSelectedTab(
-                    when (position) {
-                        0 -> ProfileTab.WALL
-                        1 -> ProfileTab.JOBS
-                        else -> ProfileTab.WALL
-                    }
-                )
-            }
-        })
     }
 
     private fun setupObservers() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.profileState.collectLatest { state ->
-                updateUI(state)
+        viewModel.user.observe(viewLifecycleOwner) { user ->
+            user?.let {
+                bindUser(it)
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.errorState.collectLatest { error ->
-                showError(error.getUserMessage())
+        viewModel.lastJob.observe(viewLifecycleOwner) { job ->
+            binding.lastJob.text = job?.let {
+                "${it.position} в ${it.name}"
+            } ?: getString(R.string.looking_for_job)
+            binding.lastJob.isVisible = true
+        }
+
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.progressBar.isVisible = isLoading
+        }
+
+        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
+            if (errorMessage.isNotBlank()) {
+                // TODO: Показать ошибку
             }
         }
     }
 
-    private fun loadProfile() {
-        viewModel.loadUserById(args.userId)
-    }
+    private fun bindUser(user: ru.netology.nework.dto.User) {
+        binding.userName.text = user.name
+        binding.userLogin.text = "@${user.login}"
 
-    private fun updateUI(state: ru.netology.nework.model.ProfileModel) {
-        state.user?.let { user ->
-            binding.toolbar.title = user.name
-            binding.textViewLogin.text = "@${user.login}"
+        Glide.with(binding.avatarImageView)
+            .load(user.avatar)
+            .circleCrop()
+            .placeholder(R.drawable.ic_avatar_placeholder)
+            .into(binding.avatarImageView)
 
-            user.avatar?.let { avatarUrl ->
-                Glide.with(binding.imageViewAvatar)
-                    .load(avatarUrl)
-                    .circleCrop()
-                    .into(binding.imageViewAvatar)
-            } ?: run {
-                binding.imageViewAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
-            }
-
-            state.jobs.firstOrNull { it.finish == null }?.let { currentJob ->
-                binding.textViewCurrentJob.text = "${currentJob.position} в ${currentJob.name}"
-            } ?: run {
-                binding.textViewCurrentJob.text = "В поиске работы"
-            }
-        }
-
-        binding.progressBar.isVisible = state.loading
-        binding.swipeRefresh.isRefreshing = state.refreshing
-    }
-
-    private fun showError(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+        // Настройка меню подписки
+        val isFollowing = false // TODO: Получить из API
+        binding.toolbar.menu.findItem(R.id.follow).isVisible = !isFollowing
+        binding.toolbar.menu.findItem(R.id.unfollow).isVisible = isFollowing
     }
 
     override fun onDestroyView() {

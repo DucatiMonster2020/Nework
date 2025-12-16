@@ -1,6 +1,6 @@
 package ru.netology.nework.activity
 
-import android.Manifest.permission.CAMERA
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,9 +10,9 @@ import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -25,6 +25,8 @@ import ru.netology.nework.R
 import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.databinding.FragmentProfileBinding
 import ru.netology.nework.model.ProfileTab
+import ru.netology.nework.util.AndroidUtils
+import ru.netology.nework.util.ValidationUtils
 import ru.netology.nework.viewmodel.ProfileViewModel
 import java.io.File
 import javax.inject.Inject
@@ -32,36 +34,35 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class ProfileFragment : Fragment() {
 
-    @Inject
-    lateinit var appAuth: AppAuth
+    private val viewModel: ProfileViewModel by viewModels()
 
-    private val viewModel: ProfileViewModel by ViewModels()
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
 
-    private var avatarFile: File? = null
+    private var avatarUri: Uri? = null
 
-    private val cameraPermissionLauncher = registerForActivityResult(
+    private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
+    ) { isGranted: Boolean ->
         if (isGranted) {
-            openCamera()
+            pickImage()
         } else {
-            showError("Для смены аватара нужен доступ к камере")
+            Toast.makeText(
+                requireContext(),
+                "Для изменения фото необходимо разрешение",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
-    private val galleryLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let { handleAvatarSelection(it) }
-    }
-    private val cameraLauncher = registerForActivityResult(
+    private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            avatarFile?.let { file ->
-                viewModel.updateAvatar(file)
+            result.data?.data?.let { uri ->
+                avatarUri = uri
+                loadAvatar(uri)
+                uploadAvatar(uri)
             }
         }
     }
@@ -78,170 +79,144 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        setupToolbar()
         setupViewPager()
-        setupClickListeners()
         setupObservers()
-        loadProfile()
+        setupClickListeners()
+
+        viewModel.loadProfile()
     }
 
+    private fun setupToolbar() {
+        binding.toolbar.apply {
+            setNavigationOnClickListener {
+                findNavController().navigateUp()
+            }
+            inflateMenu(R.menu.profile_menu)
+            setOnMenuItemClickListener { menuItem ->
+                when (menuItem.itemId) {
+                    R.id.addJob -> {
+                        showAddJobDialog()
+                        true
+                    }
+                    R.id.editProfile -> {
+                        // TODO: Реализовать редактирование профиля
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
+    }
     private fun setupViewPager() {
         val pagerAdapter = ProfilePagerAdapter(this)
         binding.viewPager.adapter = pagerAdapter
 
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = when (position) {
-                0 -> "Стена"
-                1 -> "Работы"
+                0 -> getString(R.string.wall)
+                1 -> getString(R.string.jobs)
                 else -> ""
             }
         }.attach()
-
-        binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-            override fun onPageSelected(position: Int) {
-                viewModel.updateSelectedTab(
-                    when (position) {
-                        0 -> ProfileTab.WALL
-                        1 -> ProfileTab.JOBS
-                        else -> ProfileTab.WALL
-                    }
-                )
-            }
-        })
-    }
-    private fun setupClickListeners() {
-        binding.buttonEditAvatar.setOnClickListener {
-            showAvatarSelectionDialog()
-        }
-
-        binding.buttonAddJob.setOnClickListener {
-            findNavController().navigate(R.id.action_profileFragment_to_newJobFragment)
-        }
-
-        binding.buttonLogout.setOnClickListener {
-            logout()
-        }
-
-        binding.toolbar.setNavigationOnClickListener {
-            findNavController().popBackStack()
-        }
-
-        binding.swipeRefresh.setOnRefreshListener {
-            viewModel.refreshProfile()
-        }
     }
 
     private fun setupObservers() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.profileState.collectLatest { state ->
-                updateUI(state)
+        viewModel.profile.observe(viewLifecycleOwner) { user ->
+            user?.let {
+                bindProfile(it)
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.errorState.collectLatest { error ->
-                showError(error.getUserMessage())
-            }
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.progressBar.isVisible = isLoading
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.uploadProgress.collectLatest { progress ->
-                binding.progressBarAvatar.progress = progress ?: 0
-                binding.progressBarAvatar.isVisible = progress != null
+        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
+            if (errorMessage.isNotBlank()) {
+                Toast.makeText(requireContext(), errorMessage, Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    private fun loadProfile() {
-        viewModel.loadMyProfile()
-    }
-
-    private fun updateUI(state: ru.netology.nework.model.ProfileModel) {
-        binding.swipeRefresh.isRefreshing = state.loading
-
-        state.user?.let { user ->
-            binding.textViewName.text = user.name
-            binding.textViewLogin.text = "@${user.login}"
-
-            user.avatar?.let { avatarUrl ->
-                Glide.with(binding.imageViewAvatar)
-                    .load(avatarUrl)
-                    .circleCrop()
-                    .into(binding.imageViewAvatar)
-            } ?: run {
-                binding.imageViewAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
-            }
-
-            state.jobs.firstOrNull { it.finish == null }?.let { currentJob ->
-                binding.textViewCurrentJob.text = "${currentJob.position} в ${currentJob.name}"
-            } ?: run {
-                binding.textViewCurrentJob.text = "В поиске работы"
-            }
-        }
-        binding.buttonAddJob.isVisible = state.isMyProfile && binding.viewPager.currentItem == 1
-    }
-
-    private fun showAvatarSelectionDialog() {
-        val options = arrayOf("Сделать фото", "Выбрать из галереи", "Отмена")
-
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle("Сменить аватар")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> checkCameraPermission()
-                    1 -> openGallery()
-                    2 -> {}
-                }
-            }
-            .show()
-    }
-
-    private fun checkCameraPermission() {
-        val permission = CAMERA
-        val hasPermission = ContextCompat.checkSelfPermission(
-            requireContext(),
-            permission
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (hasPermission) {
-            openCamera()
-        } else {
-            cameraPermissionLauncher.launch(permission)
+    private fun setupClickListeners() {
+        binding.avatarImageView.setOnClickListener {
+            checkPermissionAndPickImage()
         }
     }
 
-    private fun openCamera() {
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        avatarFile = File.createTempFile(
-            "avatar_",
-            ".jpg",
-            requireContext().cacheDir
-        )
+    private fun bindProfile(user: ru.netology.nework.dto.User) {
+        binding.userName.text = user.name
+        binding.userLogin.text = "@${user.login}"
 
-        val uri = FileProvider.getUriForFile(
-            requireContext(),
-            "${requireContext().packageName}.fileprovider",
-            avatarFile!!
-        )
+        Glide.with(binding.avatarImageView)
+            .load(user.avatar)
+            .circleCrop()
+            .placeholder(R.drawable.ic_avatar_placeholder)
+            .into(binding.avatarImageView)
 
-        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
-        cameraLauncher.launch(intent)
+        // Последнее место работы
+        viewModel.lastJob.observe(viewLifecycleOwner) { job ->
+            binding.lastJob.text = job?.let {
+                "${it.position} в ${it.name}"
+            } ?: getString(R.string.looking_for_job)
+            binding.lastJob.isVisible = true
+        }
     }
 
-    private fun openGallery() {
-        galleryLauncher.launch("image/*")
+    private fun checkPermissionAndPickImage() {
+        when {
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                pickImage()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE) -> {
+                Toast.makeText(
+                    requireContext(),
+                    "Для изменения фото необходимо разрешение на доступ к хранилищу",
+                    Toast.LENGTH_LONG
+                ).show()
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            else -> {
+                requestPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
     }
 
-    private fun handleAvatarSelection(uri: Uri) {
-        showError("Выбрано изображение из галереи")
+    private fun pickImage() {
+        val intent = Intent(Intent.ACTION_PICK, MediaStore.Images.Media.EXTERNAL_CONTENT_URI).apply {
+            type = "image/*"
+        }
+        pickImageLauncher.launch(intent)
     }
 
-    private fun logout() {
-        appAuth.removeAuth()
-        findNavController().popBackStack(R.id.postsFragment, false)
+    private fun loadAvatar(uri: Uri) {
+        Glide.with(binding.avatarImageView)
+            .load(uri)
+            .circleCrop()
+            .into(binding.avatarImageView)
     }
 
-    private fun showError(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+    private fun uploadAvatar(uri: Uri) {
+        val filePath = AndroidUtils.getFilePathFromUri(uri)
+
+        val validation = ValidationUtils.validateAvatar(filePath)
+        if (validation is ValidationUtils.ValidationResult.Error) {
+            Toast.makeText(requireContext(), getString(validation.messageResId), Toast.LENGTH_LONG).show()
+            return
+        }
+
+        viewModel.uploadAvatar(uri)
+    }
+
+    private fun showAddJobDialog() {
+        val dialog = AddJobDialogFragment { company, position, startDate, endDate, isCurrent ->
+            viewModel.addJob(company, position, startDate, if (isCurrent) null else endDate)
+        }
+        dialog.show(parentFragmentManager, "AddJobDialog")
     }
 
     override fun onDestroyView() {
