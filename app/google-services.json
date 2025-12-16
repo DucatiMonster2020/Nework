@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "847582464106",
+    "project_id": "nework-4c467",
+    "storage_bucket": "nework-4c467.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:847582464106:android:799de22f45a264fbb76213",
+        "android_client_info": {
+          "package_name": "ru.netology.nework"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDSxeLLZTh_l8woUuNHQoYfxEYyY8IYk-Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,133 @@
+<resources>
+    <string name="app_name">Nework</string>
+
+    <string name="post">Пост</string>
+    <string name="event">Событие</string>
+    <string name="feed">Лента</string>
+
+    <!-- Авторизация -->
+    <string name="sign_in">Войти</string>
+    <string name="sign_up">Зарегистрироваться</string>
+    <string name="sign_out">Выйти</string>
+
+    <!-- Действия -->
+    <string name="like">Нравится</string>
+
+    <!-- Заглушки (placeholder) -->
+    <string name="empty_posts">Пока нет постов</string>
+    <string name="empty_events">Пока нет событий</string>
+    <string name="error">Ошибка</string>
+
+    <!-- Навигация -->
+    <string name="back">Назад</string>
+    <string name="next">Далее</string>
+    <string name="ok">OK</string>
+
+    <!-- Плейсхолдеры для тестов -->
+    <string name="content_description_icon">Иконка</string>
+
+    <!-- Навигация -->
+    <string name="posts">Посты</string>
+    <string name="events">События</string>
+    <string name="users">Пользователи</string>
+    <string name="profile">Профиль</string>
+    <string name="logout">Выйти</string>
+    <string name="login">Войти</string>
+    <string name="register">Регистрация</string>
+    <string name="save">Сохранить</string>
+    <string name="cancel">Отмена</string>
+    <string name="edit">Редактировать</string>
+    <string name="delete">Удалить</string>
+    <string name="share">Поделиться</string>
+    <string name="retry">Повторить</string>
+
+    <!-- Посты и события -->
+    <string name="new_post">Новый пост</string>
+    <string name="new_event">Новое событие</string>
+    <string name="add_post">Добавить новый пост</string>
+    <string name="post_content_hint">Что у вас нового?</string>
+    <string name="event_content_hint">Опишите ваше событие…</string>
+    <string name="mention_users">Упомянуть</string>
+    <string name="add_location">Местоположение</string>
+    <string name="select_date_time">Выбрать дату и время</string>
+    <string name="select_location">Выбрать местоположение</string>
+    <string name="select_speakers">Выбрать спикеров</string>
+    <string name="not_selected">Не выбрано</string>
+    <string name="online">Онлайн</string>
+    <string name="offline">Офлайн</string>
+
+    <!-- Медиа -->
+    <string name="take_photo">Фото</string>
+    <string name="from_gallery">Галерея</string>
+    <string name="audio">Аудио</string>
+    <string name="video">Видео</string>
+    <string name="add_attachment">Добавить вложение</string>
+    <string name="remove_attachment">Удалить вложение</string>
+    <string name="select_avatar">Выбрать аватар</string>
+    <string name="remove_avatar">Удалить аватар</string>
+    <string name="change_avatar">Сменить аватар</string>
+
+    <!-- Авторизация -->
+    <string name="password">Пароль</string>
+    <string name="confirm_password">Подтвердите пароль</string>
+    <string name="name">Имя</string>
+    <string name="wrong_login_password">Неправильный логин или пароль</string>
+    <string name="user_exists">Пользователь с таким логином уже зарегистрирован</string>
+
+    <!-- Профиль -->
+    <string name="search_users">Поиск пользователей</string>
+    <string name="no_users">Пользователи не найдены</string>
+    <string name="add_job">Добавить работу</string>
+    <string name="job">Работа</string>
+    <string name="company_name">Название компании</string>
+    <string name="position">Должность</string>
+    <string name="start_date">Дата начала</string>
+    <string name="end_date">Дата окончания</string>
+    <string name="company_link">Ссылка на компанию</string>
+    <string name="searching_job">В поиске работы</string>
+
+    <!-- Карта -->
+    <string name="map">Карта</string>
+    <string name="my_location">Мое местоположение</string>
+    <string name="select">Выбрать</string>
+
+    <!-- Ошибки и состояния -->
+    <string name="error_network">Ошибка сети</string>
+    <string name="error_unknown">Неизвестная ошибка</string>
+    <string name="loading">Загрузка…</string>
+    <string name="empty">Пусто</string>
+    <string name="menu">Меню</string>
+
+    <!-- Валидация -->
+    <string name="error_required">Обязательное поле</string>
+    <string name="error_min_length">Минимум %d символов</string>
+    <string name="error_max_length">Максимум %d символов</string>
+    <string name="error_invalid_email">Некорректный email</string>
+    <string name="error_passwords_not_match">Пароли не совпадают</string>
+
+    <!-- Форматы -->
+    <string name="date_format">dd.MM.yyyy</string>
+    <string name="time_format">HH:mm</string>
+    <string name="datetime_format">dd.MM.yyyy HH:mm</string>
+    <string name="job_period_format">dd MMM yyyy</string>
+
+    <!-- События -->
+    <string name="event_date">Дата проведения:</string>
+    <string name="event_type">Тип события:</string>
+    <string name="participate">Участвовать</string>
+    <string name="participants">Участники</string>
+    <string name="speakers">Спикеры</string>
+
+    <!-- Вложения -->
+    <string name="photo">Фото</string>
+    <string name="gallery">Галерея</string>
+    <string name="audio_attachment">Аудио файл</string>
+    <string name="video_attachment">Видео файл</string>
+    <string name="attachment_size_warning">Максимальный размер вложения: 15 МБ</string>
+
+    <!-- Детальный просмотр -->
+    <string name="mentioned_users">Упомянутые пользователи</string>
+    <string name="no_mentioned_users">Нет упомянутых пользователей</string>
+    <string name="location">Местоположение</string>
+    <string name="no_location">Местоположение не указано</string>
+</resources>
