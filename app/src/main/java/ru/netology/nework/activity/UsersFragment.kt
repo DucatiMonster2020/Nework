@@ -1,7 +1,5 @@
 package ru.netology.nework.activity
 
-import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,9 +7,12 @@ import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import ru.netology.nework.R
 import ru.netology.nework.adapter.UsersAdapter
 import ru.netology.nework.databinding.FragmentUsersBinding
@@ -20,21 +21,12 @@ import kotlin.getValue
 
 @AndroidEntryPoint
 class UsersFragment : Fragment() {
-
     private val viewModel: UserViewModel by viewModels()
 
     private var _binding: FragmentUsersBinding? = null
     private val binding get() = _binding!!
 
-    private var selectMode = false
-    private val selectedUsers = mutableSetOf<Long>()
     private lateinit var adapter: UsersAdapter
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        arguments?.let {
-            selectMode = UsersFragmentArgs.fromBundle(it).selectMode
-        }
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -47,90 +39,63 @@ class UsersFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        setupToolbar()
-        setupRecyclerView()
-        setupObservers()
+        setupAdapter()
+        setupListeners()
+        observeViewModel()
+        loadUsers()
     }
-
-    private fun setupToolbar() {
-        binding.toolbar.apply {
-            setNavigationOnClickListener {
-                if (selectMode) {
-                    returnSelectedUsers()
-                } else {
-                    findNavController().navigateUp()
-                }
-            }
-
-            if (selectMode) {
-                inflateMenu(R.menu.select_users_menu)
-                setOnMenuItemClickListener { menuItem ->
-                    when (menuItem.itemId) {
-                        R.id.done -> {
-                            returnSelectedUsers()
-                            true
-                        }
-                        else -> false
+    private fun setupAdapter() {
+        adapter = UsersAdapter(
+            onItemClickListener = { user ->
+                findNavController().navigate(
+                    R.id.action_usersFragment_to_userProfileFragment,
+                    Bundle().apply {
+                        putLong("userId", user.id)
                     }
-                }
+                )
+            }
+        )
+
+        binding.usersList.layoutManager = LinearLayoutManager(requireContext())
+        binding.usersList.adapter = adapter
+        binding.usersList.setHasFixedSize(true)
+    }
+
+    private fun setupListeners() {
+        binding.swipeRefresh.setOnRefreshListener {
+            loadUsers()
+        }
+
+        binding.retryButton.setOnClickListener {
+            loadUsers()
+        }
+    }
+
+    private fun loadUsers() {
+        lifecycleScope.launch {
+            binding.progress.isVisible = true
+            binding.errorGroup.isVisible = false
+
+            try {
+                val users = viewModel.loadUsers()
+                adapter.submitList(users)
+                binding.emptyState.isVisible = users.isEmpty()
+            } catch (e: Exception) {
+                binding.errorGroup.isVisible = true
+                Snackbar.make(binding.root, "Ошибка загрузки пользователей", Snackbar.LENGTH_LONG).show()
+            } finally {
+                binding.progress.isVisible = false
+                binding.swipeRefresh.isRefreshing = false
             }
         }
     }
 
-    private fun setupRecyclerView() {
-        adapter = UsersAdapter(object : UsersAdapter.UserInteractionListener {
-            override fun onUserClick(userId: Long) {
-                if (selectMode) {
-                    if (selectedUsers.contains(userId)) {
-                        selectedUsers.remove(userId)
-                    } else {
-                        selectedUsers.add(userId)
-                    }
-                    adapter.notifyDataSetChanged()
-                } else {
-                    val action = UsersFragmentDirections
-                        .actionUsersFragmentToUserProfileFragment(userId)
-                    findNavController().navigate(action)
-                }
-            }
-
-            override fun onUserSelected(userId: Long, selected: Boolean) {
-                if (selected) {
-                    selectedUsers.add(userId)
-                } else {
-                    selectedUsers.remove(userId)
-                }
-            }
-        }, selectMode)
-
-        binding.usersRecyclerView.layoutManager = LinearLayoutManager(requireContext())
-        binding.usersRecyclerView.adapter = adapter
-    }
-
-    private fun setupObservers() {
-        viewModel.users.observe(viewLifecycleOwner) { users ->
-            adapter.submitList(users)
-            binding.emptyView.isVisible = users.isEmpty()
-        }
-
-        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
-            binding.progressBar.isVisible = isLoading
-        }
-
-        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
-            if (errorMessage.isNotBlank()) {
-                // Показать ошибку
+    private fun observeViewModel() {
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            error?.let {
+                Snackbar.make(binding.root, error, Snackbar.LENGTH_LONG).show()
             }
         }
-    }
-
-    private fun returnSelectedUsers() {
-        val result = Intent().apply {
-            putExtra("selected_user_ids", selectedUsers.toLongArray())
-        }
-        requireActivity().setResult(Activity.RESULT_OK, result)
-        findNavController().navigateUp()
     }
 
     override fun onDestroyView() {

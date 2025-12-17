@@ -6,22 +6,28 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.bumptech.glide.Glide
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import ru.netology.nework.R
+import ru.netology.nework.adapter.UserProfilePagerAdapter
 import ru.netology.nework.databinding.FragmentUserProfileBinding
+import ru.netology.nework.dto.User
 import ru.netology.nework.viewmodel.UserViewModel
 
 @AndroidEntryPoint
 class UserProfileFragment : Fragment() {
-
     private val viewModel: UserViewModel by viewModels()
     private val args: UserProfileFragmentArgs by navArgs()
 
     private var _binding: FragmentUserProfileBinding? = null
     private val binding get() = _binding!!
+
+    private lateinit var pagerAdapter: UserProfilePagerAdapter
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -37,85 +43,90 @@ class UserProfileFragment : Fragment() {
 
         setupToolbar()
         setupViewPager()
-        setupObservers()
-
-        viewModel.loadUser(args.userId)
-        viewModel.loadUserJobs(args.userId)
+        observeViewModel()
+        loadUserData()
     }
 
     private fun setupToolbar() {
-        binding.toolbar.apply {
-            setNavigationOnClickListener {
-                findNavController().navigateUp()
-            }
-            setOnMenuItemClickListener { menuItem ->
-                when (menuItem.itemId) {
-                    R.id.follow -> {
-                        viewModel.followUser(args.userId)
-                        true
-                    }
-                    R.id.unfollow -> {
-                        viewModel.unfollowUser(args.userId)
-                        true
-                    }
-                    else -> false
-                }
-            }
+        binding.toolbar.setNavigationOnClickListener {
+            findNavController().navigateUp()
         }
     }
 
     private fun setupViewPager() {
-        val pagerAdapter = UserProfilePagerAdapter(this, args.userId)
+        pagerAdapter = UserProfilePagerAdapter(this, args.userId)
         binding.viewPager.adapter = pagerAdapter
 
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = when (position) {
-                0 -> getString(R.string.wall)
-                1 -> getString(R.string.jobs)
+                0 -> getString(R.string.tab_wall)
+                1 -> getString(R.string.tab_jobs)
                 else -> ""
             }
         }.attach()
-    }
 
-    private fun setupObservers() {
+        binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                // Можно добавить логику при смене таба
+            }
+        })
+    }
+    private fun observeViewModel() {
         viewModel.user.observe(viewLifecycleOwner) { user ->
-            user?.let {
-                bindUser(it)
-            }
+            user?.let { bindUser(it) }
         }
 
-        viewModel.lastJob.observe(viewLifecycleOwner) { job ->
-            binding.lastJob.text = job?.let {
-                "${it.position} в ${it.name}"
-            } ?: getString(R.string.looking_for_job)
-            binding.lastJob.isVisible = true
-        }
-
-        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
-            binding.progressBar.isVisible = isLoading
-        }
-
-        viewModel.error.observe(viewLifecycleOwner) { errorMessage ->
-            if (errorMessage.isNotBlank()) {
-                // TODO: Показать ошибку
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            error?.let {
+                // Показать ошибку
             }
         }
     }
 
-    private fun bindUser(user: ru.netology.nework.dto.User) {
-        binding.userName.text = user.name
-        binding.userLogin.text = "@${user.login}"
+    private fun loadUserData() {
+        lifecycleScope.launch {
+            binding.progress.isVisible = true
+            try {
+                viewModel.loadUser(args.userId)
+            } catch (e: Exception) {
+                // Обработка ошибки
+            } finally {
+                binding.progress.isVisible = false
+            }
+        }
+    }
 
-        Glide.with(binding.avatarImageView)
-            .load(user.avatar)
-            .circleCrop()
-            .placeholder(R.drawable.ic_avatar_placeholder)
-            .into(binding.avatarImageView)
+    private fun bindUser(user: User) {
+        binding.apply {
+            userName.text = user.name
+            userLogin.text = "@${user.login}"
 
-        // Настройка меню подписки
-        val isFollowing = false // TODO: Получить из API
-        binding.toolbar.menu.findItem(R.id.follow).isVisible = !isFollowing
-        binding.toolbar.menu.findItem(R.id.unfollow).isVisible = isFollowing
+            // Аватар
+            user.avatar?.let { avatarUrl ->
+                Glide.with(userAvatar)
+                    .load(avatarUrl)
+                    .circleCrop()
+                    .placeholder(R.drawable.ic_avatar_placeholder)
+                    .into(userAvatar)
+            } ?: run {
+                userAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
+            }
+
+            // Координаты (если есть)
+            locationContainer.isVisible = user.lat != null && user.lng != null
+            user.lat?.let { lat ->
+                user.lng?.let { lng ->
+                    showOnMap.setOnClickListener {
+                        findNavController().navigate(
+                            UserProfileFragmentDirections.actionUserProfileFragmentToMapFragment(
+                                lat = lat,
+                                lng = lng
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 
     override fun onDestroyView() {

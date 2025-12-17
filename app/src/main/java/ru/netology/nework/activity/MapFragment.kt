@@ -1,20 +1,30 @@
 package ru.netology.nework.activity
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.SupportMapFragment
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 import ru.netology.nework.R
 import ru.netology.nework.databinding.FragmentMapBinding
 
-class MapFragment : Fragment() {
-
+class MapFragment : Fragment(), OnMapReadyCallback {
     private var _binding: FragmentMapBinding? = null
     private val binding get() = _binding!!
+
     private val args: MapFragmentArgs by navArgs()
+    private var googleMap: GoogleMap? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -24,103 +34,90 @@ class MapFragment : Fragment() {
         _binding = FragmentMapBinding.inflate(inflater, container, false)
         return binding.root
     }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         setupToolbar()
-        displayCoordinates()
-        setupClickListeners()
+        setupMap()
     }
 
     private fun setupToolbar() {
-        binding.toolbar.apply {
-            setNavigationOnClickListener {
+        binding.toolbar.setNavigationOnClickListener {
+            findNavController().navigateUp()
+        }
+
+        binding.toolbar.title = "Выбор локации"
+
+        binding.saveLocation.setOnClickListener {
+            googleMap?.let { map ->
+                val target = map.cameraPosition.target
+                findNavController().previousBackStackEntry?.savedStateHandle?.set(
+                    "selected_location",
+                    LatLng(target.latitude, target.longitude)
+                )
                 findNavController().navigateUp()
             }
-            setTitle(R.string.location)
+        }
+    }
+    private fun setupMap() {
+        val mapFragment = childFragmentManager.findFragmentById(R.id.map) as? SupportMapFragment
+        mapFragment?.getMapAsync(this)
+
+        if (mapFragment == null) {
+            val newMapFragment = SupportMapFragment()
+            childFragmentManager.beginTransaction()
+                .replace(R.id.map, newMapFragment)
+                .commit()
+            newMapFragment.getMapAsync(this)
         }
     }
 
-    private fun displayCoordinates() {
-        val latitude = args.latitude
-        val longitude = args.longitude
+    override fun onMapReady(map: GoogleMap) {
+        googleMap = map
 
-        if (latitude == 0.0 && longitude == 0.0) {
-            binding.coordinatesText.text = "Координаты не указаны"
-            binding.openInMapsButton.isEnabled = false
-            binding.copyButton.isEnabled = false
+        // Проверка разрешений
+        if (ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            map.isMyLocationEnabled = true
+            map.uiSettings.isMyLocationButtonEnabled = true
+        }
+
+        map.uiSettings.isZoomControlsEnabled = true
+        map.uiSettings.isCompassEnabled = true
+
+        // Установка начальной позиции
+        val initialLat = args.lat
+        val initialLng = args.lng
+
+        if (initialLat != 0.0 && initialLng != 0.0) {
+            val initialPosition = LatLng(initialLat, initialLng)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(initialPosition, 15f))
+
+            // Добавление маркера
+            map.addMarker(
+                MarkerOptions()
+                    .position(initialPosition)
+                    .title("Текущая локация")
+            )
         } else {
-            binding.coordinatesText.text =
-                "Широта: ${String.format("%.6f", latitude)}\n" +
-                        "Долгота: ${String.format("%.6f", longitude)}"
-        }
-    }
-
-    private fun setupClickListeners() {
-        binding.openInMapsButton.setOnClickListener {
-            openInExternalMaps()
+            // Центр по умолчанию (Москва)
+            val defaultPosition = LatLng(55.7558, 37.6173)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultPosition, 10f))
         }
 
-        binding.copyButton.setOnClickListener {
-            copyCoordinatesToClipboard()
+        // Обработка кликов по карте
+        map.setOnMapClickListener { latLng ->
+            map.clear()
+            map.addMarker(
+                MarkerOptions()
+                    .position(latLng)
+                    .title("Выбранная локация")
+            )
         }
-    }
-
-    private fun openInExternalMaps() {
-        val latitude = args.latitude
-        val longitude = args.longitude
-
-        // Пробуем разные варианты
-        val uris = listOf(
-            "geo:$latitude,$longitude?q=$latitude,$longitude", // Стандартный
-            "https://maps.google.com/?q=$latitude,$longitude", // Google Maps web
-            "https://yandex.ru/maps/?pt=$longitude,$latitude&z=15" // Яндекс.Карты web
-        )
-
-        var opened = false
-        for (uriString in uris) {
-            try {
-                val intent = android.content.Intent(
-                    android.content.Intent.ACTION_VIEW,
-                    android.net.Uri.parse(uriString)
-                )
-                if (intent.resolveActivity(requireContext().packageManager) != null) {
-                    startActivity(intent)
-                    opened = true
-                    break
-                }
-            } catch (e: Exception) {
-                continue
-            }
-        }
-
-        if (!opened) {
-            showNoMapsAppDialog()
-        }
-    }
-
-    private fun copyCoordinatesToClipboard() {
-        val latitude = args.latitude
-        val longitude = args.longitude
-        val coordinates = "$latitude, $longitude"
-
-        val clipboard = android.content.ClipboardManager.getInstance(requireContext())
-        val clip = android.content.ClipData.newPlainText("Координаты", coordinates)
-        clipboard.setPrimaryClip(clip)
-
-        android.widget.Toast.makeText(
-            requireContext(),
-            "Координаты скопированы в буфер обмена",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
-    }
-
-    private fun showNoMapsAppDialog() {
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Карты не установлены")
-            .setMessage("Установите приложение карт (Google Maps, Яндекс.Карты) для просмотра местоположения")
-            .setPositiveButton("ОК", null)
-            .show()
     }
 
     override fun onDestroyView() {

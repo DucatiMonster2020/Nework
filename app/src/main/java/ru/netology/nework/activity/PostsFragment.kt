@@ -1,19 +1,15 @@
 package ru.netology.nework.activity
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.paging.LoadState
-import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
@@ -23,8 +19,6 @@ import ru.netology.nework.R
 import ru.netology.nework.adapter.PostsAdapter
 import ru.netology.nework.auth.AppAuth
 import ru.netology.nework.databinding.FragmentPostsBinding
-import ru.netology.nework.dto.Post
-import ru.netology.nework.enumeration.AttachmentType
 import ru.netology.nework.viewmodel.PostViewModel
 import javax.inject.Inject
 
@@ -32,11 +26,14 @@ import javax.inject.Inject
 class PostsFragment : Fragment() {
     @Inject
     lateinit var appAuth: AppAuth
+
     private val viewModel: PostViewModel by viewModels()
+
     private var _binding: FragmentPostsBinding? = null
     private val binding get() = _binding!!
 
     private lateinit var adapter: PostsAdapter
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -48,32 +45,36 @@ class PostsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        setupRecycleView()
-        setupClickListeners()
-        setupObservers()
-        loadPosts()
+
+        setupAdapter()
+        setupListeners()
+        observeViewModel()
+        observeAuthState()
     }
-    private fun setupRecycleView() {
-        adapter = PostsAdapter.PostInteractionListener {
-            override fun onLikeClicked(post: Post) {
+
+    private fun setupAdapter() {
+        adapter = PostsAdapter(
+            onLikeListener = { post ->
                 if (post.likedByMe) {
-                    viewModel
-                        .unlikeById(post.id)
+                    viewModel.dislikeById(post.id)
                 } else {
                     viewModel.likeById(post.id)
                 }
-            }
-
-            override fun onShareClicked(post: Post) {
-                val intent = Intent().apply {
-                    action = Intent.ACTION_SEND
-                    putExtra(Intent.EXTRA_TEXT, post.content)
-                    type = "text/plain"
+            },
+            onEditListener = { post ->
+                if (appAuth.authState.value?.isAuthorized == true) {
+                    findNavController().navigate(
+                        R.id.action_postsFragment_to_newPostFragment,
+                        Bundle().apply {
+                            putLong("postId", post.id)
+                        }
+                    )
                 }
-                startActivity(Intent.createChooser(intent, getString(R.string.share_post)))
-            }
-
-            override fun onPostClicked(post: Post) {
+            },
+            onRemoveListener = { post ->
+                viewModel.removeById(post.id)
+            },
+            onItemClickListener = { post ->
                 findNavController().navigate(
                     R.id.action_postsFragment_to_postDetailFragment,
                     Bundle().apply {
@@ -81,143 +82,62 @@ class PostsFragment : Fragment() {
                     }
                 )
             }
+        )
 
-            override fun onAvatarClicked(post: Post) {
-                findNavController().navigate(
-                    R.id.action_postsFragment_to_userProfileFragment,
-                    Bundle().apply {
-                        putLong("userId", post.authorId)
-                    }
-                )
-            }
+        binding.postsList.layoutManager = LinearLayoutManager(requireContext())
+        binding.postsList.adapter = adapter
 
-            override fun onLinkClicked(post: Post) {
-                post.link?.let { link ->
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
-                    startActivity(intent)
-                }
-            }
+        // Обработка состояний загрузки
+        lifecycleScope.launch {
+            adapter.loadStateFlow.collectLatest { loadState ->
+                binding.progress.isVisible = loadState.refresh is LoadState.Loading
+                binding.errorGroup.isVisible = loadState.refresh is LoadState.Error
 
-            override fun onMenuClicked(post: Post, anchor: View) {
-                if (post.ownedByMe) {
-                    showPostMenu(post, anchor)
-                }
-            }
-
-            override fun onAttachmentClicked(post: Post) {
-                post.attachment?.let { attachment ->
-                    when (attachment.type) {
-                        AttachmentType.IMAGE -> {
-                            val bundle = Bundle().apply {
-                                putString("imageUrl", attachment.url)
-                            }
-                            findNavController().navigate(
-                                R.id.action_postsFragment_to_imageViewerFragment,
-                                bundle
-                            )
-                        }
-
-                        AttachmentType.AUDIO -> {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(attachment.url))
-                            startActivity(intent)
-                        }
-
-                        AttachmentType.VIDEO -> {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(attachment.url))
-                            startActivity(intent)
-                        }
-                    }
+                if (loadState.refresh is LoadState.Error) {
+                    val error = (loadState.refresh as LoadState.Error).error
+                    Snackbar.make(binding.root, error.message ?: "Ошибка", Snackbar.LENGTH_LONG).show()
                 }
             }
         }
-        )
-        binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerView.adapter = adapter
-        binding.recyclerView.addItemDecoration(
-            DividerItemDecoration(requireContext(),
-                DividerItemDecoration.VERTICAL)
-        )
-        adapter.addLoadStateListener { loadState ->
-            binding.swipeRefresh.isRefreshing = loadState.refresh is LoadState.Loading
-            binding.progressBar.isVisible = loadState.refresh is LoadState.Loading
+
+        // Получение данных
+        lifecycleScope.launch {
+            viewModel.data.collectLatest {
+                adapter.submitData(it)
+            }
         }
     }
-    private fun setupClickListeners() {
+
+    private fun setupListeners() {
         binding.fab.setOnClickListener {
-            if (appAuth.authStateFlow.value.isAuthorized) {
+            if (appAuth.authState.value?.isAuthorized == true) {
                 findNavController().navigate(R.id.action_postsFragment_to_newPostFragment)
             } else {
-                findNavController().navigate(R.id.action_postsFragment_to_loginFragment)
+                findNavController().navigate(R.id.action_global_loginFragment)
             }
         }
-        binding.swipeRefresh.setOnRefreshListener {
-            viewModel.refresh()
-        }
-        binding.toolbar.setOnMenuClickListener { menuItem ->
-            when (menuItem.itemId) {
-                R.id.login -> {
-                    findNavController().navigate(R.id.action_postsFragment_to_loginFragment)
-                    true
-                }
-                R.id.profile -> {
-                    findNavController().navigate(R.id.action_postsFragment_to_profileFragment)
-                    true
-                } else -> false
-            }
+
+        binding.retryButton.setOnClickListener {
+            adapter.retry()
         }
     }
-    private fun setupObservers() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.data.collectLatest { pagingData ->
-                adapter.submitData(pagingData)
+
+    private fun observeViewModel() {
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            error?.let {
+                Snackbar.make(binding.root, error, Snackbar.LENGTH_LONG).show()
             }
         }
-        viewLifecycleOwner.lifecycleScope.launch {
-            appAuth.authStateFlow.collect { authState ->
-                updateMenu(authState.isAuthorized)
-            }
-        }
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.errorState.collectLatest { error ->
-                showError(error.getUserMessage())
-            }
+
+        viewModel.postCreated.observe(viewLifecycleOwner) {
+            Snackbar.make(binding.root, "Пост создан", Snackbar.LENGTH_SHORT).show()
         }
     }
-    private fun loadPosts() {
-        viewModel.loadPosts()
-    }
-    private fun showPostMenu(post: Post, anchor: View) {
-        PopupMenu(requireContext(), anchor).apply {
-            inflate(R.menu.post_menu)
-            setOnMenuItemClickListener { menuItem ->
-                when (menuItem.itemId) {
-                    R.id.edit -> {
-                        findNavController().navigate(
-                            R.id.action_postsFragment_to_newPostFragment, Bundle().apply {
-                                putLong("postId", post.id)
-                            }
-                        )
-                        true
-                    }
-                    R.id.delete -> {
-                        viewModel.removeById(post.id)
-                        true
-                    } else -> false
-                }
-            }
-            show()
+
+    private fun observeAuthState() {
+        appAuth.authState.observe(viewLifecycleOwner) { authState ->
+            binding.fab.isVisible = authState.isAuthorized
         }
-    }
-    private fun updateMenu(isAuthorized: Boolean) {
-        binding.toolbar.menu.clear()
-        if (isAuthorized) {
-            binding.toolbar.inflateMenu(R.menu.menu_authorized)
-        } else {
-            binding.toolbar.inflateMenu(R.menu.menu_unauthorized)
-        }
-    }
-    private fun showError(message: String) {
-        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
     }
 
     override fun onDestroyView() {

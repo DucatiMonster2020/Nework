@@ -1,22 +1,20 @@
 package ru.netology.nework.util
 
-import ru.netology.nework.BuildConfig
+import android.content.Context
+import android.content.pm.PackageManager
 
 object ConfigUtils {
+    const val BASE_URL = "http://94.228.125.136:8080/"
 
-    fun getApiKey(): String {
+    fun getApiKey(context: Context): String {
         return try {
-            BuildConfig.API_KEY.ifBlank { "c1378193-bc0e-42c8-a502-b8d66di" }
+            val appInfo = context.packageManager.getApplicationInfo(
+                context.packageName,
+                PackageManager.GET_META_DATA
+            )
+            appInfo.metaData.getString("API_KEY") ?: ""
         } catch (e: Exception) {
-            "c1378193-bc0e-42c8-a502-b8d66di"
-        }
-    }
-
-    fun getBaseUrl(): String {
-        return try {
-            BuildConfig.BASE_URL.ifBlank { "http://94.228.125.136:8080/" }
-        } catch (e: Exception) {
-            "http://94.228.125.136:8080/"
+            ""
         }
     }
 }

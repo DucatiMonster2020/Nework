@@ -2,51 +2,25 @@ package ru.netology.nework.dto
 
 import ru.netology.nework.enumeration.EventType
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 data class Event(
-    val id: Long,
-    val authorId: Long,
-    val author: String,
+    val id: Long = 0,
+    val authorId: Long = 0,
+    val author: String = "",
     val authorAvatar: String? = null,
     val authorJob: String? = null,
-    val content: String,
-    val datetime: Instant,
-    val published: Instant,
-    val coords: Coords? = null,
-    val type: EventType,
-    val likeOwnerIds: List<Long> = emptyList(),
+    val content: String = "",
+    val datetime: Instant = Instant.now(),
+    val published: Instant = Instant.now(),
+    val coords: Coordinates? = null,
+    val type: EventType = EventType.ONLINE,
+    val likeOwnerIds: Set<Long> = emptySet(),
     val likedByMe: Boolean = false,
-    val speakerIds: List<Long> = emptyList(),
-    val participantsIds: List<Long> = emptyList(),
+    val speakerIds: Set<Long> = emptySet(),
+    val participantsIds: Set<Long> = emptySet(),
     val participatedByMe: Boolean = false,
     val attachment: Attachment? = null,
     val link: String? = null,
     val ownedByMe: Boolean = false,
-    val users: Map<Long, UserPreview> = emptyMap(),
-    val speakers: List<Speaker> = emptyList()
-) {
-    val formattedPublished: String
-        get() {
-            val formatter = DateTimeFormatter
-                .ofPattern("dd.MM.yyyy HH:mm")
-                .withZone(ZoneId.systemDefault())
-            return formatter.format(published)
-        }
-    val formattedDatetime: String
-        get() {
-            val formatter = DateTimeFormatter
-                .ofPattern("dd.MM.yyyy HH:mm")
-                .withZone(ZoneId.systemDefault())
-            return formatter.format(datetime)
-        }
-    fun getLikesCount(): Int = likeOwnerIds.size
-    fun getParticipantsCount(): Int = participantsIds.size
-    fun getSpeakersCount(): Int = speakerIds.size
-}
-data class Speaker(
-    val id: Long,
-    val name: String,
-    val avatar: String? = null
+    val users: Map<Long, UserPreview> = emptyMap()
 )

@@ -6,33 +6,76 @@
     <dimen name="spacing_medium">16dp</dimen>
     <dimen name="spacing_large">24dp</dimen>
     <dimen name="spacing_xlarge">32dp</dimen>
+    <dimen name="spacing_xxlarge">48dp</dimen>
 
-    <!-- Corners -->
+    <!-- Corner radius -->
     <dimen name="corner_radius_small">4dp</dimen>
     <dimen name="corner_radius_medium">8dp</dimen>
     <dimen name="corner_radius_large">16dp</dimen>
+    <dimen name="corner_radius_xlarge">24dp</dimen>
 
     <!-- Elevation -->
-    <dimen name="elevation_low">2dp</dimen>
+    <dimen name="elevation_small">2dp</dimen>
     <dimen name="elevation_medium">4dp</dimen>
-    <dimen name="elevation_high">8dp</dimen>
+    <dimen name="elevation_large">8dp</dimen>
+    <dimen name="elevation_xlarge">16dp</dimen>
 
     <!-- Sizes -->
     <dimen name="avatar_size_small">40dp</dimen>
-    <dimen name="avatar_size_medium">60dp</dimen>
-    <dimen name="avatar_size_large">120dp</dimen>
-    <dimen name="icon_size_small">24dp</dimen>
-    <dimen name="icon_size_medium">32dp</dimen>
-    <dimen name="icon_size_large">48dp</dimen>
+    <dimen name="avatar_size_medium">56dp</dimen>
+    <dimen name="avatar_size_large">96dp</dimen>
+    <dimen name="avatar_size_xlarge">128dp</dimen>
 
-    <!-- Text sizes -->
-    <dimen name="text_size_caption">12sp</dimen>
-    <dimen name="text_size_body2">14sp</dimen>
-    <dimen name="text_size_body1">16sp</dimen>
-    <dimen name="text_size_h6">20sp</dimen>
-    <dimen name="text_size_h5">24sp</dimen>
+    <dimen name="icon_size_small">16dp</dimen>
+    <dimen name="icon_size_medium">24dp</dimen>
+    <dimen name="icon_size_large">32dp</dimen>
+
+    <dimen name="fab_size">56dp</dimen>
+    <dimen name="fab_margin">16dp</dimen>
 
     <!-- Card sizes -->
+    <dimen name="card_padding">16dp</dimen>
+    <dimen name="card_margin">8dp</dimen>
     <dimen name="card_elevation">2dp</dimen>
-    <dimen name="card_corner_radius">8dp</dimen>
+
+    <!-- Image sizes -->
+    <dimen name="image_height_small">120dp</dimen>
+    <dimen name="image_height_medium">200dp</dimen>
+    <dimen name="image_height_large">300dp</dimen>
+
+    <!-- Input field sizes -->
+    <dimen name="input_height">56dp</dimen>
+    <dimen name="input_padding">16dp</dimen>
+
+    <!-- Button sizes -->
+    <dimen name="button_height">48dp</dimen>
+    <dimen name="button_min_width">64dp</dimen>
+
+    <!-- Divider -->
+    <dimen name="divider_height">1dp</dimen>
+
+    <!-- Toolbar -->
+    <dimen name="toolbar_height">56dp</dimen>
+    <dimen name="toolbar_elevation">4dp</dimen>
+
+    <!-- Bottom navigation -->
+    <dimen name="bottom_nav_height">56dp</dimen>
+    <dimen name="bottom_nav_elevation">8dp</dimen>
+
+    <!-- Tab layout -->
+    <dimen name="tab_height">48dp</dimen>
+    <dimen name="tab_padding">16dp</dimen>
+
+    <!-- Progress indicator -->
+    <dimen name="progress_size_small">40dp</dimen>
+    <dimen name="progress_size_medium">56dp</dimen>
+    <dimen name="progress_size_large">72dp</dimen>
+
+    <!-- Map -->
+    <dimen name="map_button_size">48dp</dimen>
+    <dimen name="map_button_margin">16dp</dimen>
+
+    <!-- Media controls -->
+    <dimen name="media_control_size">56dp</dimen>
+    <dimen name="media_progress_height">4dp</dimen>
 </resources>

@@ -1,170 +1,124 @@
 package ru.netology.nework.viewmodel
 
-import android.net.Uri
-import androidx.lifecycle.*
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
-import androidx.paging.map
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import ru.netology.nework.dto.Coords
 import ru.netology.nework.dto.MediaUpload
 import ru.netology.nework.dto.Post
-import ru.netology.nework.repository.*
+import ru.netology.nework.repository.PostRepository
 import ru.netology.nework.util.SingleLiveEvent
 import javax.inject.Inject
 
 @HiltViewModel
-@OptIn(ExperimentalCoroutinesApi::class)
 class PostViewModel @Inject constructor(
     private val repository: PostRepository
 ) : ViewModel() {
 
-    private val _dataState = MutableLiveData(FeedModelState())
-    val dataState: LiveData<FeedModelState> = _dataState
+    val data: Flow<PagingData<Post>> = repository.getPagingSource()
+        .cachedIn(viewModelScope)
+
+    private val _posts = MutableLiveData<List<Post>>()
+    val posts: LiveData<List<Post>> = _posts
+
+    private val _postCreated = SingleLiveEvent<Unit>()
+    val postCreated: LiveData<Unit> = _postCreated
 
     private val _error = SingleLiveEvent<String>()
     val error: LiveData<String> = _error
 
-    private val _postCreated = MutableLiveData(false)
-    val postCreated: LiveData<Boolean> = _postCreated
+    private val _edited = MutableLiveData<Post?>(null)
+    val edited: LiveData<Post?> = _edited
 
-    private val _currentPost = MutableLiveData<Post?>()
-    val currentPost: LiveData<Post?> = _currentPost
+    private val _media = MutableLiveData<MediaUpload?>(null)
+    val media: LiveData<MediaUpload?> = _media
 
-    private val _coordinates = MutableLiveData<Coords?>(null)
-    val coordinates: LiveData<Coords?> = _coordinates
+    init {
+        loadPosts()
+    }
 
-    val data: Flow<PagingData<Post>> = repository.data
-        .cachedIn(viewModelScope)
-
-    fun loadPosts() = viewModelScope.launch {
-        try {
-            _dataState.value = FeedModelState(loading = true)
-            // Paging 3 автоматически загружает данные
-            _dataState.value = FeedModelState()
-        } catch (e: Exception) {
-            _dataState.value = FeedModelState(error = true)
-            _error.value = e.message ?: "Ошибка загрузки постов"
+    fun loadPosts() {
+        viewModelScope.launch {
+            try {
+                _posts.value = repository.getAll()
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
         }
     }
 
-    fun likeById(id: Long) = viewModelScope.launch {
-        try {
-            repository.likeById(id)
-        } catch (e: Exception) {
-            _error.value = e.message ?: "Ошибка при лайке"
+    fun likeById(id: Long) {
+        viewModelScope.launch {
+            try {
+                repository.likeById(id)
+                loadPosts()
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
         }
     }
 
-    fun unlikeById(id: Long) = viewModelScope.launch {
-        try {
-            repository.unlikeById(id)
-        } catch (e: Exception) {
-            _error.value = e.message ?: "Ошибка при удалении лайка"
+    fun dislikeById(id: Long) {
+        viewModelScope.launch {
+            try {
+                repository.dislikeById(id)
+                loadPosts()
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
         }
     }
 
-    fun removeById(id: Long) = viewModelScope.launch {
-        try {
-            repository.removeById(id)
-        } catch (e: Exception) {
-            _error.value = e.message ?: "Ошибка при удалении поста"
+    fun removeById(id: Long) {
+        viewModelScope.launch {
+            try {
+                repository.removeById(id)
+                loadPosts()
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
         }
     }
 
-    fun createPost(
-        content: String,
-        mediaUpload: MediaUpload? = null,
-        link: String? = null,
-        mentionIds: List<Long> = emptyList()
-    ) = viewModelScope.launch {
-        try {
-            _dataState.value = FeedModelState(loading = true)
+    fun save() {
+        _edited.value?.let { post ->
+            viewModelScope.launch {
+                try {
+                    _media.value?.let { mediaUpload ->
+                        repository.saveWithAttachment(post, mediaUpload)
+                    } ?: repository.save(post)
 
-            val coords = _coordinates.value
-
-            repository.save(
-                content = content,
-                mediaUpload = mediaUpload,
-                link = link,
-                coords = coords,
-                mentionIds = mentionIds
-            )
-
-            _postCreated.value = true
-            _coordinates.value = null
-            _dataState.value = FeedModelState()
-        } catch (e: Exception) {
-            _dataState.value = FeedModelState(error = true)
-            _error.value = e.message ?: "Ошибка при создании поста"
-            _postCreated.value = false
+                    _postCreated.value = Unit
+                    _edited.value = null
+                    _media.value = null
+                } catch (e: Exception) {
+                    _error.value = e.message
+                }
+            }
         }
     }
 
-    fun updatePost(
-        id: Long,
-        content: String,
-        mediaUpload: MediaUpload? = null,
-        link: String? = null,
-        mentionIds: List<Long> = emptyList()
-    ) = viewModelScope.launch {
-        try {
-            _dataState.value = FeedModelState(loading = true)
+    fun edit(post: Post) {
+        _edited.value = post
+    }
 
-            val coords = _coordinates.value
-            repository.update(
-                id = id,
-                content = content,
-                mediaUpload = mediaUpload,
-                link = link,
-                coords = coords,
-                mentionIds = mentionIds
-            )
-
-            _postCreated.value = true
-            _coordinates.value = null
-            _dataState.value = FeedModelState()
-        } catch (e: Exception) {
-            _dataState.value = FeedModelState(error = true)
-            _error.value = e.message ?: "Ошибка при обновлении поста"
-            _postCreated.value = false
+    fun changeContent(content: String) {
+        val text = content.trim()
+        if (_edited.value?.content == text) {
+            return
         }
+        _edited.value = _edited.value?.copy(content = text)
     }
 
-    fun loadPost(id: Long) = viewModelScope.launch {
-        try {
-            _dataState.value = FeedModelState(loading = true)
-            val post = repository.getById(id)
-            _currentPost.value = post
-            _dataState.value = FeedModelState()
-        } catch (e: Exception) {
-            _dataState.value = FeedModelState(error = true)
-            _error.value = e.message ?: "Ошибка загрузки поста"
-        }
+    fun changeMedia(mediaUpload: MediaUpload) {
+        _media.value = mediaUpload
     }
 
-    fun setCoordinates(lat: Double, long: Double) {
-        _coordinates.value = Coords(lat.toString(), long.toString())
-    }
-
-    fun clearCoordinates() {
-        _coordinates.value = null
-    }
-
-    fun uploadMedia(uri: Uri): Flow<String> {
-        return repository.uploadMedia(uri).map { media ->
-            media.url
-        }
-    }
-
-    fun refresh() = viewModelScope.launch {
-        try {
-            repository.refresh()
-        } catch (e: Exception) {
-            _error.value = e.message ?: "Ошибка обновления"
-        }
+    fun clearMedia() {
+        _media.value = null
     }
 }

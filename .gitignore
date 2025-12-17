@@ -6,7 +6,7 @@ captures/
 .externalNativBuild
 .cxx/
 
-local.properties
+/local.properties
 gradle.properties
 
 .DS_Store

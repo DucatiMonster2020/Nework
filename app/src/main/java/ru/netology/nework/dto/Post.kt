@@ -2,8 +2,6 @@ package ru.netology.nework.dto
 
 import ru.netology.nework.enumeration.AttachmentType
 import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 data class Post(
     val id: Long = 0,
@@ -12,32 +10,28 @@ data class Post(
     val authorAvatar: String? = null,
     val authorJob: String? = null,
     val content: String = "",
-    val published: Instant,
-    val coords: Coords? = null,
+    val published: Instant = Instant.now(),
+    val coords: Coordinates? = null,
     val link: String? = null,
-    val mentionIds: List<Long> = emptyList(),
+    val likeOwnerIds: Set<Long> = emptySet(),
+    val mentionIds: Set<Long> = emptySet(),
     val mentionedMe: Boolean = false,
-    val likeOwnerIds: List<Long> = emptyList(),
     val likedByMe: Boolean = false,
     val attachment: Attachment? = null,
     val ownedByMe: Boolean = false,
-    val users: Map<Long, UserPreview> = emptyMap(),
-) {
-    val formattedPublished: String
-        get() {
-            val formatter = DateTimeFormatter
-                .ofPattern("dd.MM.yyyy HH:mm")
-                .withZone(ZoneId.systemDefault())
-            return formatter.format(published)
-        }
-    fun getLikesCount(): Int = likeOwnerIds.size
-}
-data class Coords(
-    val lat: Double,
-    val long: Double
+    val users: Map<Long, UserPreview> = emptyMap()
 )
+
+data class Coordinates(
+    val lat: Double = 0.0,
+    val lng: Double = 0.0
+)
+
 data class Attachment(
     val url: String,
-    val type: AttachmentType,
-    val previewUrl: String? = null
+    val type: AttachmentType
+)
+
+data class MediaUpload(
+    val uri: String
 )

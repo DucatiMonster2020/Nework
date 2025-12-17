@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import dagger.hilt.android.qualifiers.ApplicationContext
+import ru.netology.nework.dto.Token
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,57 +15,53 @@ class AppAuth @Inject constructor(
 ) {
     private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
 
-    private val _authState = MutableLiveData(getAuthState())
+    private val _authState = MutableLiveData<AuthState>()
     val authState: LiveData<AuthState> = _authState
 
-    private var authToken: String? = prefs.getString(TOKEN_KEY, null)
-        set(value) {
-            field = value
-            prefs.edit {
-                if (value != null) {
-                    putString(TOKEN_KEY, value)
-                } else {
-                    remove(TOKEN_KEY)
-                }
-            }
-        }
-
-    private var authId: Long = prefs.getLong(ID_KEY, 0L)
-        set(value) {
-            field = value
-            prefs.edit {
-                putLong(ID_KEY, value)
-            }
-        }
-
     init {
-        prefs.edit {
-            apply()
-        }
-    }
+        val token = prefs.getString(TOKEN_KEY, null)
+        val id = prefs.getLong(ID_KEY, 0L)
 
-    fun setAuth(id: Long, token: String) {
-        authId = id
-        authToken = token
-        _authState.value = getAuthState()
-    }
-
-    fun removeAuth() {
-        authId = 0L
-        authToken = null
-        _authState.value = getAuthState()
-    }
-
-    fun getAuthState(): AuthState {
-        return if (authToken != null && authId != 0L) {
-            AuthState.Authorized(id = authId, token = authToken!!)
+        if (token == null || id == 0L) {
+            _authState.value = AuthState()
         } else {
-            AuthState.Unauthorized
+            _authState.value = AuthState(
+                id = id,
+                token = token
+            )
         }
+    }
+
+    @Synchronized
+    fun setAuth(token: Token) {
+        prefs.edit {
+            putString(TOKEN_KEY, token.token)
+            putLong(ID_KEY, token.id)
+        }
+        _authState.value = AuthState(
+            id = token.id,
+            token = token.token
+        )
+    }
+
+    @Synchronized
+    fun removeAuth() {
+        prefs.edit {
+            clear()
+        }
+        _authState.value = AuthState()
+    }
+
+    data class AuthState(
+        val id: Long = 0,
+        val token: String? = null
+    ) {
+        val isAuthorized: Boolean
+            get() = token != null && id != 0L
     }
 
     companion object {
-        private const val ID_KEY = "id"
-        private const val TOKEN_KEY = "token"
+        private const val TOKEN_KEY = "TOKEN_KEY"
+        private const val ID_KEY = "ID_KEY"
     }
 }

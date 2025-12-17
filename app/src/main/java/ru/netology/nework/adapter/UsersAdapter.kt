@@ -7,72 +7,52 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import ru.netology.nework.R
-import ru.netology.nework.databinding.ItemUserBinding
+import ru.netology.nework.databinding.CardUserBinding
 import ru.netology.nework.dto.User
-import ru.netology.nework.util.AndroidUtils
 
-interface UserInteractionListener {
-    fun onUserClicked(user: User)
-    fun onUserSelected(user: User, selected: Boolean)
-}
 class UsersAdapter(
-    private val listener: UserInteractionListener,
-    private val isSelectionMode: Boolean = false
-) : ListAdapter<User, UsersAdapter.UserViewHolder>(UserDiffCallback()) {
-    private val selectedUsers = mutableSetOf<Long>()
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UserViewHolder {
-        val binding = ItemUserBinding.inflate(
+    private val onItemClickListener: (User) -> Unit
+) : ListAdapter<User, UsersAdapter.ViewHolder>(UserDiffCallback()) {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val binding = CardUserBinding.inflate(
             LayoutInflater.from(parent.context),
             parent,
             false
         )
-        return UserViewHolder(binding, listener, isSelectionMode)
+        return ViewHolder(binding)
     }
 
-    override fun onBindViewHolder(holder: UserViewHolder, position: Int) {
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
         val user = getItem(position)
-        val isSelected = selectedUsers.contains(user.id)
-        holder.bind(user, isSelected)
+        holder.bind(user)
     }
-    fun setSelectedUsers(ids: List<Long>) {
-        selectedUsers.clear()
-        selectedUsers.addAll(ids)
-        notifyDataSetChanged()
-    }
-    fun getSelectedUserIds(): List<Long> = selectedUsers.toList()
-    class UserViewHolder(
-        private val binding: ItemUserBinding,
-        private val listener: UserInteractionListener,
-        private val isSelectionMode: Boolean
+
+    inner class ViewHolder(
+        private val binding: CardUserBinding
     ) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(user: User, isSelected: Boolean) {
+
+        fun bind(user: User) {
             binding.apply {
-                textViewLogin.text = user.login
-                textViewName.text = user.name
+                userName.text = user.name
+                userLogin.text = "@${user.login}"
+
                 user.avatar?.let { avatarUrl ->
-                    Glide.with(imageViewAvatar).load(avatarUrl)
-                        .placeholder(R.drawable.ic_avatar_placeholder)
+                    Glide.with(userAvatar)
+                        .load(avatarUrl)
                         .circleCrop()
-                        .into(imageViewAvatar)
+                        .placeholder(R.drawable.ic_avatar_placeholder)
+                        .into(userAvatar)
                 } ?: run {
-                    imageViewAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
+                    userAvatar.setImageResource(R.drawable.ic_avatar_placeholder)
                 }
-                if (isSelectionMode) {
-                    root.isSelected = isSelected
-                    root.setOnClickListener {
-                        val newSelected = !isSelected
-                        root.isSelected = newSelected
-                        listener.onUserSelected(user, newSelected)
-                    }
-                } else {
-                    root.setOnClickListener {
-                        listener.onUserClicked(user)
-                    }
+
+                root.setOnClickListener { onItemClickListener(user)
                 }
-                AndroidUtils.fixRecyclerViewItem(binding.root)
             }
         }
     }
+
     class UserDiffCallback : DiffUtil.ItemCallback<User>() {
         override fun areItemsTheSame(oldItem: User, newItem: User): Boolean {
             return oldItem.id == newItem.id

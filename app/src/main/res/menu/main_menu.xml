@@ -4,26 +4,21 @@
 
     <item
         android:id="@+id/login"
-        android:icon="@drawable/ic_login"
         android:title="@string/login"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/register"
-        android:icon="@drawable/ic_register"
         android:title="@string/register"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/profile"
-        android:icon="@drawable/ic_profile"
         android:title="@string/profile"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/logout"
-        android:icon="@drawable/ic_logout"
         android:title="@string/logout"
-        app:showAsAction="ifRoom" />
-
+        app:showAsAction="never" />
 </menu>
